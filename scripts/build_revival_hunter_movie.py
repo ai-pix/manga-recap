@@ -38,15 +38,15 @@ def main():
     root = Path(".")
     output_dir = Path("C:/Users/ravih/Videos/MangaRecap")
     output_dir.mkdir(parents=True, exist_ok=True)
-    output_movie = output_dir / "SSS_Class_Revival_Hunter_Chapters_01_to_40_4Hours.mp4"
     package_dir = root / "data" / "export" / "revival_hunter_movie_package"
     package_dir.mkdir(parents=True, exist_ok=True)
+    output_movie = package_dir / "SSS_Class_Revival_Hunter_Chapters_01_to_40_4Hours.mp4"
 
     hook_path = root / "data" / "chapters" / "revival_hunter_hook" / "07_final.mp4"
     if not hook_path.exists():
         raise FileNotFoundError(f"Hook not found: {hook_path}")
 
-    clips: list[tuple[str, Path]] = [("Prologue: The 4,090 Suicides to Reverse Time", hook_path)]
+    clips: list[tuple[str, Path]] = [("Prologue: Dying 4,090 Times to Reverse Time", hook_path)]
     for i in range(1, 41):
         ch_path = root / "data" / "chapters" / f"revival_hunter_ch{i:02d}" / "07_final.mp4"
         if not ch_path.exists():
@@ -64,7 +64,6 @@ def main():
         dur = get_duration(clip)
         ts_str = format_timestamp(current_time)
         timestamps.append((ts_str, title))
-        # ffmpeg concat demuxer expects forward slashes or escaped backslashes
         posix_path = clip.resolve().as_posix()
         concat_lines.append(f"file '{posix_path}'")
         current_time += dur
@@ -75,7 +74,7 @@ def main():
     concat_file = package_dir / "concat_list.txt"
     concat_file.write_text("\n".join(concat_lines), encoding="utf-8")
 
-    # Run FFmpeg concat stream copy
+    # Run FFmpeg concat stream copy with strict PTS/DTS regeneration and faststart
     print(f"Concatenating losslessly with FFmpeg stream copy to: {output_movie}")
     cmd = [
         "ffmpeg",
@@ -88,18 +87,22 @@ def main():
         str(concat_file),
         "-c",
         "copy",
+        "-fflags",
+        "+genpts",
+        "-movflags",
+        "+faststart",
         str(output_movie),
     ]
     subprocess.run(cmd, check=True)
 
     # Generate metadata.txt with timestamps
     metadata_file = package_dir / "metadata.txt"
-    title_text = "I Committed Suicide 4,090 Times To Steal The Strongest Hunter's Skills (Chapters 01-40) [4 HOURS] - Manhwa Recap"
+    title_text = "He Broke Time With 4,090 Deaths: SSS-Class Revival Hunter (Chapters 01-40) Manhwa recap"
 
     desc_lines = [
         "Confucius Kim lived as a bottom-tier F-rank hunter, consuming toxic jealousy towards the world's greatest hunter: The Flame Emperor.",
         "One night, in a twisted stroke of irony, the Tower grants him an S-rank passive skill: Upon death, he copies one skill from his killer and regresses 24 hours into the past.",
-        "When the Flame Emperor murders him in cold blood, Confucius copies his regression skill—and commits suicide 4,090 times to rewind time by 11 years to eliminate the tyrant before he ever ascends.",
+        "When the Flame Emperor murders him in cold blood, Confucius copies his regression skill—and dies 4,090 times to rewind time by 11 years to eliminate the tyrant before he ever ascends.",
         "",
         "Here is the complete 4-hour epic story of SSS-Class Revival Hunter, covering Chapters 01 through 40.",
         "",
@@ -121,13 +124,10 @@ def main():
     meta_content = f"TITLE:\n{title_text}\n\nDESCRIPTION:\n" + "\n".join(desc_lines) + f"\n\nTAGS:\n{tags_text}\n"
     metadata_file.write_text(meta_content, encoding="utf-8")
 
-    # Link output video into package_dir
-    target_link = package_dir / "SSS_Class_Revival_Hunter_Chapters_01_to_40_4Hours.mp4"
-    if target_link.exists():
-        target_link.unlink()
-    # Create copy or hardlink
+    # Copy backup to Videos folder
+    backup_link = output_dir / "SSS_Class_Revival_Hunter_Chapters_01_to_40_4Hours.mp4"
     try:
-        shutil.copy2(output_movie, target_link)
+        shutil.copy2(output_movie, backup_link)
     except Exception:
         pass
 

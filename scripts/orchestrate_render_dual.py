@@ -26,11 +26,13 @@ from manga_recap.stages.s5_render import run as run_render
 sys.stdout.reconfigure(encoding="utf-8")
 cfg = load_config()
 
-start_ch = int(sys.argv[1]) if len(sys.argv) > 1 else 14
-end_ch = int(sys.argv[2]) if len(sys.argv) > 2 else 40
+force_all = "--force" in sys.argv
+args_without_flags = [a for a in sys.argv[1:] if not a.startswith("--")]
+start_ch = int(args_without_flags[0]) if len(args_without_flags) > 0 else 14
+end_ch = int(args_without_flags[1]) if len(args_without_flags) > 1 else 40
 
 print("=" * 70)
-print(f"DUAL-INSTANCE KAGGLE GPU BATCH RENDER: Chapters {start_ch:02d} to {end_ch:02d}")
+print(f"DUAL-INSTANCE KAGGLE GPU BATCH RENDER: Chapters {start_ch:02d} to {end_ch:02d} (Force: {force_all})")
 print("Instance 1: manga-recap-render   (Tesla T4 Pure GPU NVENC)")
 print("Instance 2: manga-recap-render-2 (Tesla T4 Pure GPU NVENC)")
 print("Target Bitrate: 3.2 Mbps (~200-250 MB per 10-min chapter)")
@@ -72,7 +74,7 @@ def worker_loop(worker_id: int, kernel_slug: str) -> None:
         ch_id = f"revival_hunter_ch{ch_num:02d}"
         paths = ChapterPaths.create(ch_id)
 
-        if paths.final_file.exists():
+        if paths.final_file.exists() and not force_all:
             size_mb = paths.final_file.stat().st_size / (1024 * 1024)
             log(f"[Worker-{worker_id}] [{ch_num:02d}/{end_ch:02d}] {ch_id}: 07_final.mp4 already exists ({size_mb:.1f} MB) -> SKIPPING")
             with stats_lock:

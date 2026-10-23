@@ -844,25 +844,21 @@ def render_pynv(
     raw_rate_bps = (raw_size * 8) / dur_sec
     print(f"[pynv] Raw bitstream: {raw_size / 1_000_000:.1f} MB ({raw_rate_bps / 1_000_000:.2f} Mbps)", flush=True)
 
-    if raw_rate_bps > 4_500_000:
-        print(
-            f"[pynv] Bitstream exceeds target rate; applying pure GPU NVENC hardware compression to {video_bitrate / 1_000_000:.1f} Mbps...",
-            flush=True,
-        )
-        video_enc_args = [
-            "-c:v",
-            "h264_nvenc",
-            "-preset",
-            "p4",
-            "-b:v",
-            f"{video_bitrate}",
-            "-maxrate",
-            f"{int(video_bitrate * 1.35)}",
-            "-bufsize",
-            f"{int(video_bitrate * 2)}",
-        ]
-    else:
-        video_enc_args = ["-c:v", "copy"]
+    print(f"[pynv] Applying pure GPU NVENC hardware rate control to {video_bitrate / 1_000_000:.1f} Mbps (profile: main)...", flush=True)
+    video_enc_args = [
+        "-c:v",
+        "h264_nvenc",
+        "-preset",
+        "p4",
+        "-profile:v",
+        "main",
+        "-b:v",
+        f"{video_bitrate}",
+        "-maxrate",
+        f"{int(video_bitrate * 1.35)}",
+        "-bufsize",
+        f"{int(video_bitrate * 2)}",
+    ]
 
     print("[pynv] Muxing audio into MP4...", flush=True)
     t_mux = time.time()
