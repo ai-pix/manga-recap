@@ -12,7 +12,7 @@ def update_metadata():
     
     print("Waiting for video upload to complete and record video_id...")
     video_id = None
-    for _ in range(120): # wait up to 60 minutes
+    while True:
         state = uploader.load_upload_state()
         rec = state.get("revival_hunter_4hour_movie")
         if rec and rec.get("video_id"):
