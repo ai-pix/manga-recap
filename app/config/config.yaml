@@ -1,0 +1,474 @@
+# Manga Recap - single source of truth for all pipeline configuration.
+# Change a value here; no code edits required.
+
+project:
+  # Used to prefix Kaggle dataset/kernel slugs. Must match your Kaggle username
+  # conventions and be lowercase alphanumeric with dashes.
+  slug: manga-recap
+  # Selects the series bible at data/series/<series_name>/series.md. Set this to
+  # the manga you are working on so the narrator uses its real character names.
+  series_name: only-sense-online
+  # Kaggle API credentials live in ~/.kaggle/kaggle.json (already present).
+
+paths:
+  # Root for per-chapter working data. Relative to the repo root.
+  data_dir: data
+  # Directory holding the series bible: data/series/<series_name>/series.md
+  series_dir: data/series
+
+# ---------------------------------------------------------------------------
+# LLM providers. `vision` and `script` are independent so you can mix vendors.
+# Registered names: anthropic, gemini, openrouter
+# ---------------------------------------------------------------------------
+llm:
+  vision:
+    provider: gemini
+    # Large context, cheap, and strong at reading dense illustrated pages. The
+    # whole point of `vision` is looking at a grid of panels, so the model has
+    # to cope with a page of noisy line art plus speech bubbles.
+    #
+    # Gemini retired 2.5-flash for new accounts and names 3.8-flash as the
+    # replacement, so an older id here fails with a 404 on the first batch
+    # rather than anything resembling a helpful error.
+    model: gemini-3.5-flash
+    # Panels per API request. This is the dial that decides whether a chapter
+    # fits inside a free-tier key: Gemini's free allowance is a small fixed
+    # number of generateContent requests per minute, and 136 panels at 8 per
+    # request is 17 calls before transcription even starts. At 20 it is 7.
+    # Keep <= 20, which is also where large images start costing more than the
+    # batching saves.
+    batch_size: 20
+    # Ceiling on requests per minute, enforced client-side by spacing them out.
+    # A free-tier key can be as low as 10 RPM, and a chapter is 12 requests, so
+    # firing them as fast as the network returns guarantees a 429 on the way.
+    # At 8 the run takes about 90 seconds and never trips the limit. Set to 0 to
+    # disable and go as fast as the provider will answer.
+    requests_per_minute: 8
+    # Gemini answers a demand spike with 503, and a 503 that clears in two
+    # minutes is a 503 that retries should outlast. Six attempts with a 5s base
+    # gives about three minutes of ladder, which is what a busy model actually
+    # needs; three attempts over twelve seconds gives up while the queue is
+    # still moving.
+    max_retries: 6
+    temperature: 0.2
+    max_tokens: 8000
+
+  script:
+    provider: gemini
+    # The writer reads every panel description for the chapter in a single call,
+    # so it needs a long context. The prose quality of the narrator is the one
+    # thing worth spending a bigger model on: set this to a pro-tier model if
+    # the jokes fall flat.
+    model: gemini-3.5-flash
+    max_retries: 6
+    temperature: 0.9
+    max_tokens: 16000
+
+  # Shared retry behaviour for transient upstream errors. A per-role
+  # llm.<role>.max_retries overrides the attempt count below.
+  retry:
+    max_retries: 6
+    # The base the per-role ladder starts from. Sized for a provider that
+    # returns 503 under load rather than for a blip.
+    initial_backoff_seconds: 5.0
+    max_backoff_seconds: 60.0
+    backoff_multiplier: 2.0
+
+# ---------------------------------------------------------------------------
+# Stage 2 - describing panels and reading their dialogue
+# ---------------------------------------------------------------------------
+describe:
+  # Re-read every speech bubble from a native-resolution crop after the panels
+  # have been described. Panel text in a downscaled crop is a few pixels tall
+  # and reads as [illegible] often enough that the recap loses the reason
+  # anything happens. The text crops are small, so this pass is cheap.
+  transcribe: true
+  # Text crops per transcription request. A transcript is short, so this can be
+  # the same as the description batch size, and making it so halves the number
+  # of requests the transcription pass needs.
+  transcribe_batch_size: 20
+  transcribe_max_tokens: 4000
+  # One more attempt, alone, for any panel that came back empty. Batching
+  # dilutes attention; a panel that failed inside a batch of eight will often
+  # read correctly on its own.
+  transcribe_retries: 1
+  # Panels of lookbehind injected into each description call, so the model
+  # knows who a pronoun refers to. 0 disables it.
+  context_window: 3
+  # Send the full page alongside a batch when the page is a double-page spread
+  # or the batch straddles a page break. Without it the two halves of a spread
+  # read as two unrelated scenes.
+  send_page_reference: true
+  max_page_references: 2
+  # Share of the panels that contain text which may go unread before stage 3
+  # refuses to write a script. Above this it is an error, because the narrator
+  # would have to invent the dialogue. Measured against the panels that have
+  # text, not against the whole chapter, since a chapter can be mostly
+  # wordless art and still be fine.
+  max_untranscribed_ratio: 0.1
+
+# ---------------------------------------------------------------------------
+# Script writer
+# ---------------------------------------------------------------------------
+script:
+  # Target narration length for snappy YouTube recap (~8-10 mins).
+  target_words: 1500
+  # Accept +-25% of target_words before the validator complains.
+  word_count_tolerance: 0.25
+  # Every panel in the chapter should appear at least once.
+  require_full_panel_coverage: true
+  # A block naming more than this many panels gets flagged as a pacing problem.
+  max_panels_per_block: 4
+  # A block longer than this holds one panel for too long and the picture stops
+  # tracking the narration. One block is one spoken breath.
+  max_words_per_block: 45
+  # Panels with no real story content that the script may legitimately skip.
+  skippable_panel_labels:
+    - credits
+    - ad
+    - blank
+    - page_margin
+
+# ---------------------------------------------------------------------------
+# Stage 1 - panel cropping (runs locally)
+# ---------------------------------------------------------------------------
+crop:
+  # Which detector cuts the panels.
+  #
+  #   yolo    a trained panel detector. Accurate on colour pages, splash pages
+  #           and irregular layouts, which the XY-cut fallback cannot do.
+  #           Needs crop.weights_path to exist.
+  #   opencv  recursive XY-cut over the white gutters. No weights, no download.
+  #           Only viable on clean B/W pages with drawn panel borders; it merges
+  #           adjacent panels in the same row and fails on full-bleed art.
+  #
+  # yolo is the default. Weights are fetched by `manga fetch-models`.
+  detector: yolo
+  # Relative paths resolve from the repo root.
+  weights_path: models/panel_detector.pt
+  # Swept over a 31-page colour chapter: panel counts are stable from 0.25 to
+  # 0.45, and by 0.65 real pages start coming back empty. 0.45 keeps every page
+  # while dropping the weakest splash-page noise.
+  confidence: 0.45
+  # NMS IoU. Panels rarely overlap much, so a moderate value avoids merging a
+  # genuine stacked pair while collapsing duplicate detections.
+  iou_threshold: 0.45
+  # Drop detections smaller than this fraction of page area (kills noise/SFX specks).
+  min_area_ratio: 0.008
+  # Absolute floor on padding, in pixels. Superseded by padding_ratio below for
+  # anything but the smallest panels; kept so a page cannot lose its border.
+  padding_px: 6
+  # Padding is a fraction of each panel's own longest edge, not a flat pixel
+  # count. A flat count is wrong in both directions: 6px is generous on a
+  # 100px panel and negligible on a 700px one, so large panels end up with their
+  # overhanging speech bubbles sliced. Clamped to [padding_min_px,
+  # padding_max_px] and never below padding_px.
+  padding_ratio: 0.02
+  padding_min_px: 8
+  padding_max_px: 40
+  # Grow each panel box to contain the speech bubbles the detector found inside
+  # it before cropping. This is the setting that stops dialogue being cut in
+  # half, and it should stay on. Turning it off leaves only the padding above to
+  # absorb a bubble that overhangs its panel, which it usually will not.
+  union_text_boxes: true
+  # A text region is unioned into a panel when that fraction of it already falls
+  # inside, or when its centre is inside. The overlap test exists for bubbles
+  # deliberately drawn across a panel border, which belong to both neighbours.
+  text_min_overlap: 0.15
+  # Text regions smaller than this fraction of page area are dropped as noise.
+  # Far smaller than min_area_ratio: one speech bubble is a rounding error
+  # against page area, and dropping it is the failure this stage prevents.
+  text_min_area_ratio: 0.0002
+  # Write a native-resolution crop of each panel's text to 02_panels/_text/ for
+  # the transcription pass. Small images, and the only reliable way to read
+  # manga text, which is a few pixels tall in the downscaled panel.
+  write_text_crops: true
+  # Longest edge of a text crop. Text is the one thing never to downscale, so
+  # this is set above any realistic page dimension and exists only as a guard.
+  text_crop_max_edge: 2000
+  # Assert that every detected text region ended up fully inside some panel.
+  # Pure geometry, no model call, so it is cheap enough to always run. Clipped
+  # text is a problem; text outside every panel is only a warning, since page
+  # numbers and floating SFX legitimately belong to nothing.
+  check_text_coverage: true
+  min_text_containment: 0.9
+  # Minimum share of a page's drawn area that the detected panels must cover,
+  # measured against the drawn extent rather than the full sheet, so wide
+  # margins are not mistaken for missing panels. A missed panel looks exactly
+  # like a shorter chapter downstream, and on a colour page with full-bleed
+  # artwork the detector routinely returns only the framed panels.
+  min_page_coverage: 0.45
+
+  # -------------------------------------------------------------------------
+  # Ink geometry. Everything above works from rectangles, which is right until a
+  # page stops being a grid: a bubble drawn across a border, a hand breaking
+  # the frame, a full-bleed panel with no border at all. This block measures the
+  # pixels instead, so those cases are measured rather than guessed.
+  # -------------------------------------------------------------------------
+  ink:
+    enabled: true
+    # How far a traced outline may reach past its detected box. Also the cap
+    # that stops one panel's border from dragging its crop across the page.
+    max_growth_px: 40
+    # How far either side of the box the border stroke is looked for. The
+    # detector's box and the drawn stroke never agree exactly, so a few pixels
+    # of slack is what lets the trace find the frame at all.
+    band_px: 8
+    # The share of the box perimeter the traced outline must account for before
+    # the trace is believed to be a frame. A real border covers nearly all of it
+    # even with a break where content spilled through; a contour that is not a
+    # frame covers little, and its bounding box is discarded rather than trusted.
+    # This single test is what stops an arbitrary blob stretching a crop.
+    min_perimeter_coverage: 0.8
+    # A real frame encloses roughly its own panel. A contour an order of
+    # magnitude larger is a blob that happens to span the box, not a border.
+    max_contour_area_ratio: 2.5
+    # How much nearer to this panel the outline must reach than to the next
+    # panel over. Manga often draws one stroke as the right edge of a panel and
+    # the left edge of its neighbour, so a contour can enclose both and growing
+    # to it would swallow the neighbour.
+    tie_margin_px: 8
+    # Lightest level still counted as paper. Adaptive, so a grey scan and a
+    # clean digital page both work, with a floor so a dark page degrades to
+    # "everything is content" rather than to an empty mask.
+    paper_percentile: 85
+    paper_min_level: 180
+    # Paper is bright and neutral. Aged paper is still close to neutral; a
+    # coloured panel background is not, however pale it is. Without this a
+    # full-bleed colour panel reads as one enormous paper region.
+    paper_spread: 20
+    # Dark enough to count as a stroke. Line art and panel borders are near
+    # black; screentone and coloured panels are not.
+    barrier_level: 100
+    # And unsaturated. A dark red panel at the same luminance as a border is
+    # artwork, not a border, and the channel spread is what tells them apart.
+    barrier_spread: 40
+    # Leftover ink smaller than this share of the page is not offered as a
+    # panel. Drawn area is much smaller than panel area, because most of a
+    # panel is white.
+    min_candidate_ink_ratio: 0.02
+    # Erosion applied to leftover drawn area before it is offered. A missed
+    # panel is a solid block and a gutter is a thin strip, so removing
+    # everything thinner than a gutter separates them. Without it the connected
+    # web of gutters reads as one whole-page candidate, which tells nobody
+    # anything.
+    candidate_erode_px: 12
+    # Add the unaccounted-ink regions as real panels instead of only reporting
+    # them. They are reported either way, so a bad recovery is visible in the
+    # log and drawn in purple on the contact sheets. Set this back to false to
+    # undo it.
+    auto_add_candidates: true
+  # Row grouping: two panels count as the same row when their top edges are
+  # within this fraction of the page height. Grouping on tops rather than on
+  # vertical overlap is what makes a tall side panel beside stacked panels come
+  # out right. Raise it for pages with deliberately staggered panels.
+  row_top_tolerance: 0.05
+  # Manga reads right-to-left. Set false for left-to-right sources.
+  reading_direction: rtl
+  # Write a contact sheet per page into 02_panels/_debug/ for eyeballing.
+  write_debug_sheets: true
+  # Longest edge of a saved panel image, in pixels. Keeps uploads to Kaggle small.
+  max_panel_edge: 1400
+  # Pages yielding fewer than this many panels are flagged for review.
+  min_panels_per_page: 1
+
+# YOLO-specific settings, used only when crop.detector == "yolo".
+yolo_crop:
+  # Inference size. A manga page is tall, and squeezing a full page into 640px
+  # loses the thin panels down the side of a busy layout. 1024 is the tested
+  # setting; 1280 is worth trying on dense double-page spreads.
+  imgsz: 1024
+  # Which detector classes count as panels.
+  #   0  panel/frame
+  #   1  text or speech region
+  # The default model detects both, and a text box is not a panel, so this
+  # matters. Set to null for a single-class detector.
+  class_ids:
+    - 0
+  # Which classes count as text. Class 1 in the default model, and it is kept
+  # rather than discarded: the text boxes are what proves a speech bubble was
+  # not cut by the crop, and stage 1 needs them to build the high-resolution
+  # crops that stage 2 transcribes. Set to an empty list for a single-class
+  # detector, which disables text coverage entirely.
+  text_class_ids:
+    - 1
+
+# XY-cut fallback tuning, used only when crop.detector == "opencv".
+opencv_crop:
+  # A row or column counts as gutter when its ink coverage is at or below this.
+  # Verified against a dense 3-row page: lower values let panel interiors through.
+  gutter_white_ratio: 0.97
+  # Narrowest gutter the detector will act on, in pixels.
+  min_gutter_px: 12
+  # Recursion depth. A 3x3 grid of panels needs 4; 6 covers most layouts.
+  depth_limit: 6
+  # Both sides of a cut must keep at least this share of the region. This is a
+  # floor, not a half-way test: a 3-row page cuts at roughly a third each time.
+  min_panel_share: 0.05
+  # Ink is dilated by this kernel before gutter analysis, so thin line art reads
+  # as solid panel interiors. Keep it well under min_gutter_px.
+  ink_close_px: 2
+  # After cutting, shrink each region to its ink plus this margin, so crops land
+  # on the panel border instead of carrying the surrounding gutter.
+  trim_margin_px: 3
+
+# ---------------------------------------------------------------------------
+# Stage 4 - Text-to-speech + alignment
+# ---------------------------------------------------------------------------
+tts:
+  # TTS backend:
+  #   - "gemini-tts" (Google Gemini 3.8 Flash TTS with Whisper alignment - human-grade prosody)
+  #   - "edge-tts"   (local neural TTS, ~15s)
+  #   - "chatterbox" (Kaggle GPU kernel for voice cloning)
+  backend: chatterbox
+
+  # Gemini 3.8 Flash TTS settings
+  # Voices: "Puck" (energetic/friendly recap male), "Charon" (deep cinematic male), "Fenrir" (confident male)
+  gemini_model: gemini-3.8-flash-lite-tts
+  gemini_voice: Puck
+  gemini_batch_size: 40
+
+  # Edge-TTS settings
+  concurrency: 10
+
+  kernel_slug: manga-recap-tts
+  payload_host: https://catbox.moe
+  poll_interval_seconds: 15
+  max_wait_seconds: 21600          # 6h; Kaggle's own hard limit is 12h
+
+  voice:
+    name: Orus
+    rate: "+0%"
+    pitch: "+0Hz"
+    mode: clone
+    reference_wav: assets/voices/narrator.wav
+
+  max_chars_per_chunk: 400
+  language_id: en
+  duration_words_per_minute: 150
+  duration_tolerance: 0.6
+
+align:
+  # faster-whisper model. large-v3 for accuracy, or large-v3-turbo for speed.
+  whisper_model: large-v3-turbo
+  device: cuda
+  compute_type: float16
+  # Minimum tokens needed before we trust Whisper alignment over the fallback.
+  min_tokens_for_alignment: 40
+  # Script token to whisper word similarity floor. Below this, mark degraded.
+  min_match_ratio: 0.55
+  beam_size: 5
+
+# ---------------------------------------------------------------------------
+# Stage 5 - Kaggle kernel B: video render
+# ---------------------------------------------------------------------------
+render:
+  kernel_slug: manga-recap-render
+  # Same one-zip arrangement as stage 4. This payload carries the panels, the
+  # script, the narration audio and the timeline, so stage 4's outputs travel to
+  # stage 5 the same way stage 2's outputs travel to stage 4.
+  payload_host: https://catbox.moe
+  enable_gpu: true
+  encoder: auto
+  preset: veryfast
+  test_duration_seconds: 0.0
+  # Concurrent ffmpeg processes. 0 means "one per CPU core". Raise it well above
+  # the core count only for NVENC, where each session costs almost nothing.
+  max_workers: 0
+  # payload_url: https://your-host/ch01-render.zip
+  poll_interval_seconds: 15
+  max_wait_seconds: 21600
+  width: 1920
+  height: 1080
+  fps: 30
+  crf: 20
+  audio_bitrate: 192k
+  # Letterbox padding colour, used only when background_mode is "solid".
+  background_color: "0x0d0d12"
+  # How a panel that is not exactly 16:9 is made to fill the frame.
+  #
+  #   blurred  fill the frame with a soft, darkened copy of the panel itself,
+  #            and lay the sharp art on top. No bars, and the colours match the
+  #            scene, which stops the frame reading as two unrelated images.
+  #   solid    pad the remainder with background_color. Cheapest, and draws
+  #            the most attention to the art, but leaves visible bars.
+  #   crop     scale up until the frame is covered and cut the overflow. Fills
+  #            the screen with no bars and no compositing, at the cost of
+  #            clipping the panel's edges.
+  background_mode: blurred
+  # The blur is applied to a copy of the panel scaled down to blur_width pixels
+  # wide, then scaled back up. A blurred backdrop carries no detail, so the
+  # downscale destroys nothing a full-resolution blur would have kept, and the
+  # blur runs on a few thousand pixels instead of two million.
+  #
+  # This is what makes the backdrop affordable. The whole composition happens
+  # once per panel, into a single finished frame that the encoder then holds, so
+  # none of it runs per frame. Blurring at full resolution on every frame is the
+  # single most expensive thing this renderer can be asked to do.
+  blur_width: 64
+  blur_radius: 8
+  # Darkening the backdrop so the sharp panel separates from it. 0.0 leaves it
+  # as bright as the art and the two compete.
+  blur_darken: 0.12
+  kenburns:
+    enabled: true
+    # How far the slow push-in travels over a shot, as a zoom factor. 1.0 is a
+    # static shot. The panel is scaled to this much larger than the frame once,
+    # and the move is a crop sliding across it, which is far cheaper than
+    # rescaling every frame. Keep it under about 1.15: a tall manga panel
+    # scaled past that starts to look soft.
+    zoom_end: 1.06
+  # Direction of the Ken Burns move, cycled through shot by shot so a run of
+  # similar panels does not read as one continuous drift.
+  # Options: in, out, left, right, up, down.
+  pan_cycle: in,left,up,right
+  # A shot shorter than this is stretched or merged, because a panel that
+  # flashes for a fifth of a second reads as a glitch rather than a cut.
+  min_shot_seconds: 0.7
+  # Clamp for a single shot, so one long sentence does not hold a panel for a
+  # minute. Time is taken from the following shot, never from before this one,
+  # so a cut can never move earlier than the word it is anchored to.
+  max_clip_seconds: 60.0
+  # Longest clause, in words, before the renderer splits a sentence and cuts to
+  # the next panel mid-sentence. This is the dial behind "whatever the script
+  # is explaining should be showing": lower it for tighter visual tracking,
+  # raise it for longer holds.
+  max_words_per_beat: 14
+
+# ---------------------------------------------------------------------------
+# Background music and SFX - disabled for v1, wired up and ready to enable.
+# ---------------------------------------------------------------------------
+bgm:
+  enabled: false
+  directory: assets/bgm
+  # Loudness target for the music bed under narration.
+  music_db: -22.0
+  # Fade in/out at the very start and end of the video.
+  fade_seconds: 2.0
+  # Pick one file at random per render, or set a fixed filename.
+  mode: random                    # random | fixed
+  fixed_file: ""
+
+sfx:
+  enabled: false
+  directory: assets/sfx
+  sfx_db: -12.0
+
+# ---------------------------------------------------------------------------
+# Narration delivery. The voice clip you extracted earlier is the intended
+# cloning source once the pipeline is proven end to end.
+# ---------------------------------------------------------------------------
+narration:
+  # Insert a short pause between blocks, in seconds. Helps pacing.
+  block_gap_seconds: 0.18
+  # Normalise narration loudness to this LUFS before mixing.
+  target_lufs: -16.0
+
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
+logging:
+  level: INFO
+  log_file: logs/manga_recap.log
+  # Write a per-stage JSON status file to logs/<chapter>/<stage>.json
+  write_stage_status: true

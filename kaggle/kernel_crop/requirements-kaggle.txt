@@ -1,0 +1,11 @@
+# Panel detection for the batch crop kernel.
+#
+# Kaggle's image already ships torch, torchvision, opencv, numpy and Pillow, and
+# `ultralytics` is the only thing missing. Nothing here may pin or upgrade torch:
+# replacing the CUDA build that ships with the image costs more time than the
+# install saves, and it is the single most common way this kernel used to fail.
+#
+# torchvision is deliberately NOT removed here. The TTS kernel uninstalls it
+# because it conflicts with `transformers`; panel detection does not import
+# transformers, and ultralytics needs torchvision for its NMS op.
+ultralytics

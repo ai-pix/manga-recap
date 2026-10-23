@@ -1,0 +1,13 @@
+{
+  "title": "manga-recap-render",
+  "code_file": "main.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": true,
+  "keywords": ["manga-recap", "render"],
+  "dataset_sources": [],
+  "competition_sources": [],
+  "kernel_sources": []
+}

@@ -1,0 +1,18 @@
+# Local pipeline. Runs on your machine.
+# Python 3.10+ required (3.12 recommended).
+#
+# GPU-heavy stages (TTS, alignment, render) do NOT run here - they run on Kaggle
+# and use kaggle/requirements-kaggle.txt instead.
+
+pyyaml>=6.0
+pydantic>=2.6
+python-dotenv>=1.0
+rich>=13.0
+httpx>=0.27
+
+# Panel cropping, stage 1 (local)
+opencv-python>=4.9
+numpy>=1.26
+pillow>=10.2
+pymupdf>=1.24        # PDF -> pages, stage 0
+ultralytics>=8.1     # YOLO inference, only needed for crop.detector: yolo

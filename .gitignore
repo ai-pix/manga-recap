@@ -1,0 +1,98 @@
+# =============================================================================
+# Git Ignore - Manga Recap
+# =============================================================================
+
+# --- Secrets & Credentials (NEVER COMMIT) ---
+.env
+*.env
+.env.*
+config/.env
+*.key
+client_secrets.json
+*token*.json
+gdrive_token.json
+youtube_token.json
+kaggle.json
+
+# --- Media & Binary Assets (NO BIG FILES) ---
+*.mp4
+*.mkv
+*.avi
+*.mov
+*.flv
+*.wav
+*.mp3
+*.aac
+*.m4a
+*.flac
+*.ogg
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.gif
+*.bmp
+*.tiff
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.rar
+*.7z
+*.pt
+*.pth
+*.bin
+*.safetensors
+*.onnx
+*.engine
+*.h264
+*.hevc
+
+# --- Data, Cache & Working Directories ---
+data/
+data/chapters/
+app/data/
+models/
+zips/
+ffmpeg_static/
+manga-recap-render/
+scratch/
+logs/
+build/
+dist/
+.dropbox/
+.kilo/
+
+# Keep directory scaffolding with .gitkeep
+!data/.gitkeep
+!models/.gitkeep
+!assets/bgm/.gitkeep
+!assets/sfx/.gitkeep
+!assets/voices/.gitkeep
+!logs/.gitkeep
+
+# --- Python & Tooling ---
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# --- Temporary & Scratch Output Files ---
+all_blocks_comparison.txt
+*.log
+
+# --- OS & IDE Metadata ---
+.vscode/
+.idea/
+*.sublime-*
+.DS_Store
+Thumbs.db
+desktop.ini

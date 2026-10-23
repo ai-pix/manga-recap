@@ -1,0 +1,56 @@
+# Install as a console command: `manga run ch01`.
+#
+# This project uses a src layout, so the package is not importable until it is
+# installed or the repo is on PYTHONPATH. An editable install is the intended
+# setup:
+#
+#     pip install -e .
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "manga-recap"
+version = "0.1.0"
+description = "Turn manga chapter pages into a narrated recap video."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "pyyaml>=6.0",
+    "pydantic>=2.6",
+    "python-dotenv>=1.0",
+    "rich>=13.0",
+    "httpx>=0.27",
+    "opencv-python-headless>=4.9",
+    "numpy>=1.26",
+    "pillow>=10.2",
+    "pymupdf>=1.24",
+]
+
+[project.optional-dependencies]
+# Only needed for crop.detector: yolo. The opencv fallback has no extra
+# dependency, which is why the pipeline runs before any weights are set up.
+yolo = ["ultralytics>=8.1"]
+dev = ["pytest>=8.0", "ruff>=0.5"]
+
+[project.scripts]
+manga = "manga_recap.cli:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "W"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "kaggle/kernel_tts_align"]

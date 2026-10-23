@@ -1,0 +1,17 @@
+{
+  "title": "manga-recap-tts",
+  "code_file": "main.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "accelerator": "gpu_t4_x2",
+  "enable_internet": true,
+  "keywords": [
+    "manga-recap",
+    "tts"
+  ],
+  "dataset_sources": [],
+  "competition_sources": [],
+  "kernel_sources": []
+}

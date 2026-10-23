@@ -1,0 +1,24 @@
+# Kaggle-side dependencies. Baked into both notebooks.
+# Kaggle GPU images ship with CUDA-enabled torch already, so we do not pin
+# torch here - installing it would risk clobbering the Kaggle-provided build.
+
+# Text-to-speech
+# The distribution is `chatterbox-tts`; it ships chatterbox/tts_turbo.py, which
+# is where ChatterboxTurboTTS lives. `chatterbox-turbo` looks right and is not
+# on PyPI at all.
+chatterbox-tts>=0.1.7
+
+# Forced alignment / word timestamps
+faster-whisper>=1.0
+openai-whisper
+huggingface_hub>=0.28.0
+fsspec>=2024.9.0
+
+# Audio + video handling
+soundfile>=0.12
+numpy>=1.26
+pillow>=10.2
+
+# Video assembly. Kaggle images already include ffmpeg on PATH; these are only
+# needed for programmatic probing and concatenation helpers.
+imageio-ffmpeg>=0.4.9
