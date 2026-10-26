@@ -45,6 +45,11 @@ Both must be green. They take about 9 seconds combined.
    - Video rendering must strictly leverage NVIDIA T4 hardware NVENC (`h264_nvenc`) and pure CUDA hardware pipelines (`scale_cuda`, `overlay_cuda`, PyTorch GPU memory buffers). Never bottleneck GPU throughput with CPU filtergraphs.
    - Whisper alignment and TTS synthesis must strictly run in PyTorch CUDA (`device="cuda"`).
 
+3. **STRICT RULE: NEVER INVENT NEW AD-HOC PATTERNS — USE WHAT ALREADY WORKED:**
+   - Under NO circumstances should any agent invent untested ad-hoc scripts, alternate stitching hacks, or deviate from established, verified pipeline workflows.
+   - **Stitching & Movie Compilations:** Always use the proven methodology from `scripts/stitch_all_chapters.py` (`-c:v h264_nvenc`, `-preset p4`, `-cq 28`, `-pix_fmt yuv420p`, `-c:a aac -b:a 128k`, `-movflags +faststart`). NEVER use fragile stream-copy (`-c copy`) for multi-chapter concatenation, as it causes timestamp discontinuities and breaks YouTube video processing.
+   - Maintain codebase clarity: reuse existing tools, do not leave confusing one-off scripts, and follow existing architectural standards.
+
 
 ## Where the work is
 

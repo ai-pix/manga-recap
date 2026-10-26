@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+
 from manga_recap.core.config import load_config
 from manga_recap.core.schema import DescriptionFile, ScriptFile, load_model
 from manga_recap.stages.s3_script.validate import validate

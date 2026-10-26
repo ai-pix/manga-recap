@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -16,6 +17,17 @@ from manga_recap.stages.s7_publish.youtube import (
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Upload Revival Hunter Movie to YouTube")
+    parser.add_argument("--public", action="store_true", default=True, help="Publish directly as public")
+    parser.add_argument(
+        "--privacy",
+        choices=["public", "unlisted", "private"],
+        default="public",
+        help="Privacy status (default: public)",
+    )
+    args = parser.parse_args()
+
+    privacy = "public" if args.public else args.privacy
     package_dir = REPO_ROOT / "data" / "export" / "revival_hunter_movie_package"
     if not package_dir.is_dir():
         print(f"Package directory not found: {package_dir}")
@@ -27,7 +39,7 @@ def main():
     print(f"  Video: {meta.video_path.name} ({meta.video_path.stat().st_size / (1024**3):.2f} GB)")
     print(f"  Thumbnail: {meta.thumbnail_path.name if meta.thumbnail_path else 'None'}")
     print(f"  Tags: {len(meta.tags)} tags")
-    print("  Privacy: unlisted (Ready for user to set Premiere)")
+    print(f"  Privacy: {privacy}")
 
     uploader = YouTubeUploader()
     # Authenticate
@@ -36,8 +48,8 @@ def main():
         print("Failed to authenticate with YouTube API.")
         return 1
 
-    print("\n[YouTube Publish] Launching resumable 10GB video upload...")
-    video_id = uploader.upload_video(meta, privacy_status="unlisted")
+    print(f"\n[YouTube Publish] Launching resumable video upload ({meta.video_path.stat().st_size / (1024**3):.2f} GB)...")
+    video_id = uploader.upload_video(meta, privacy_status=privacy)
 
     if meta.thumbnail_path and meta.thumbnail_path.exists():
         print("[YouTube Publish] Uploading 16:9 custom thumbnail...")
@@ -50,14 +62,14 @@ def main():
             "video_id": video_id,
             "url": f"https://youtu.be/{video_id}",
             "title": meta.title,
-            "privacy": "unlisted",
+            "privacy": privacy,
             "file": str(meta.video_path),
             "size_gb": round(meta.video_path.stat().st_size / (1024**3), 2),
         },
     )
 
     print("\n" + "=" * 60)
-    print(f"SUCCESS: Video published to YouTube as UNLISTED!")
+    print(f"SUCCESS: Video published to YouTube as {privacy.upper()}!")
     print(f"Video URL: https://youtu.be/{video_id}")
     print("=" * 60)
     return 0

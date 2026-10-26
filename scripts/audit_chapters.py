@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+
 def main():
     report = []
     for i in range(1, 21):
@@ -12,7 +13,7 @@ def main():
             continue
         desc = json.loads(desc_p.read_text(encoding="utf-8"))
         script = json.loads(script_p.read_text(encoding="utf-8"))
-        
+
         panels = desc.get("panels", [])
         black_panels = set()
         for p in panels:
@@ -23,7 +24,7 @@ def main():
                 black_panels.add(pid)
             elif len(p.get("characters", [])) == 0 and ("stat" in d_txt or "system" in d_txt or "dialogue only" in d_txt):
                 black_panels.add(pid)
-                
+
         script_panels = []
         black_in_script = []
         for b in script.get("blocks", []):
@@ -31,7 +32,7 @@ def main():
                 script_panels.append(pid)
                 if pid in black_panels:
                     black_in_script.append(pid)
-                    
+
         blocks = script.get("blocks", [])
         word_count = sum(len(b.get("narration", "").split()) for b in blocks)
         sample = blocks[0].get("narration", "")[:60] if blocks else ""

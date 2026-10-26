@@ -12,7 +12,6 @@ import sys
 import time
 import urllib.request
 from pathlib import Path
-from typing import Any
 
 from dotenv import load_dotenv
 
@@ -59,7 +58,7 @@ def summarize_chapter(ch_num: int, model: str = "mercury-3") -> str:
             act = "; ".join(f"{k}: {v}" for k, v in act.items())
         speech_raw = p.get("speech_bubbles", [])
         speech = " | ".join(speech_raw) if isinstance(speech_raw, list) else str(speech_raw)
-        
+
         entry = f"[{pid}] Characters: {chars} | Action: {act}"
         if speech:
             entry += f' | Dialogue: "{speech}"'

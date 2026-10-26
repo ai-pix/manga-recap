@@ -17,6 +17,7 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import numpy as np
 from PIL import Image
 
 from .ffmpeg import (
@@ -198,7 +199,8 @@ def generate_cinematic_backdrop(
     import torch
     import torch.nn.functional as F
 
-    proxy_w, proxy_h = 640, 360
+    proxy_w = max(64, int(round(out_w / 3.0)))
+    proxy_h = max(64, int(round(out_h / 3.0)))
     proxy = F.interpolate(raw_batch, size=(proxy_h, proxy_w), mode="bilinear", align_corners=False)
     blurred_proxy = gaussian_blur_gpu(proxy, sigma=sigma)
 
@@ -295,37 +297,81 @@ def compose_panel_cuda(
     raw_batch = raw.unsqueeze(0)  # [1, 3, H, W]
     src_ratio = float(src_h) / float(max(1, src_w))
 
-    # Check if this panel is tall (vertical manhwa panel)
-    is_tall = pan_tall and (src_ratio > 1.05)
+    # Detect speech bubbles, margins, and whitespace bands at top & bottom
+    max_c = raw.max(dim=0)[0]
+    min_c = raw.min(dim=0)[0]
+    sat = (max_c - min_c) / (max_c + 1e-4)
+    lum = 0.299 * raw[0] + 0.587 * raw[1] + 0.114 * raw[2]
 
-    if not is_tall:
-        # 1. Smart action/face crop for tall panels to eliminate letterbox squishing and frame the character
-        if src_ratio > 1.25:
-            target_crop_h = int(min(src_h, src_w * 1.30))
-            if target_crop_h < src_h:
-                max_c = raw.max(dim=0)[0]
-                min_c = raw.min(dim=0)[0]
-                sat = (max_c - min_c) / (max_c + 1e-4)
-                lum = 0.299 * raw[0] + 0.587 * raw[1] + 0.114 * raw[2]
-                dy = torch.abs(lum[1:, :] - lum[:-1, :])
+    bubble_or_blank = ((lum > 220) & (sat < 0.18)) | (lum < 25)
+    row_bub = bubble_or_blank.float().mean(dim=1)
+
+    # Scan top speech bubble / margin boundary (scan down up to 35% of panel height)
+    top_limit = int(src_h * 0.35)
+    y_top = 0
+    for y in range(top_limit):
+        if row_bub[y] >= 0.40:
+            y_top = y + 1
+        elif y > 0 and row_bub[y : min(src_h, y + 4)].mean() < 0.30:
+            break
+
+    # Scan bottom speech bubble / margin boundary (scan up from bottom up to 35% of panel height)
+    bot_limit = int(src_h * 0.65)
+    y_bot = src_h
+    for y in range(src_h - 1, bot_limit, -1):
+        if row_bub[y] >= 0.40:
+            y_bot = y
+        elif y < src_h - 1 and row_bub[max(0, y - 4) : y + 1].mean() < 0.30:
+            break
+
+    top_trim_ratio = float(y_top) / float(src_h)
+    bot_trim_ratio = float(src_h - y_bot) / float(src_h)
+
+    # A panel is "Full Artwork" (eligible for upside panning) ONLY if:
+    # 1. pan_tall is enabled
+    # 2. Aspect ratio is tall (src_ratio >= 1.55)
+    # 3. Neither top nor bottom is dominated by speech bubbles (both trim ratios < 8%)
+    is_full_art = (
+        pan_tall
+        and (src_ratio >= 1.55)
+        and (top_trim_ratio < 0.08)
+        and (bot_trim_ratio < 0.08)
+    )
+
+    if not is_full_art:
+        # Panels with speech bubbles at top/bottom or standard panels:
+        # 1. Crop out speech bubbles at top and bottom to isolate the character & artwork
+        if (y_bot - y_top) >= int(src_h * 0.35) and ((y_top > 0) or (y_bot < src_h)):
+            crop_raw_batch = raw_batch[:, :, y_top:y_bot, :]
+        else:
+            crop_raw_batch = raw_batch
+
+        # 2. Smart action/face crop for tall character panels to eliminate excessive vertical framing
+        _, _, cur_h, cur_w = crop_raw_batch.shape
+        cur_ratio = float(cur_h) / float(max(1, cur_w))
+        if cur_ratio > 1.25:
+            target_crop_h = int(min(cur_h, cur_w * 1.25))
+            if target_crop_h < cur_h:
+                sub_raw = crop_raw_batch[0]
+                max_c_sub = sub_raw.max(dim=0)[0]
+                min_c_sub = sub_raw.min(dim=0)[0]
+                sat_sub = (max_c_sub - min_c_sub) / (max_c_sub + 1e-4)
+                lum_sub = 0.299 * sub_raw[0] + 0.587 * sub_raw[1] + 0.114 * sub_raw[2]
+                dy = torch.abs(lum_sub[1:, :] - lum_sub[:-1, :])
                 dy = torch.cat([dy[:1, :], dy], dim=0)
-                dx = torch.abs(lum[:, 1:] - lum[:, :-1])
+                dx = torch.abs(lum_sub[:, 1:] - lum_sub[:, :-1])
                 dx = torch.cat([dx[:, :1], dx], dim=1)
                 edges = dy + dx
 
-                bubble_mask = (lum > 235) & (sat < 0.12)
-                black_mask = (lum < 25)
+                bubble_mask = (lum_sub > 225) & (sat_sub < 0.15)
+                black_mask = (lum_sub < 25)
                 valid_mask = (~bubble_mask) & (~black_mask)
 
-                row_energy = ((edges * 0.7 + sat * 120.0) * valid_mask.float()).mean(dim=1)
+                row_energy = ((edges * 0.7 + sat_sub * 120.0) * valid_mask.float()).mean(dim=1)
                 kernel = torch.ones(1, 1, target_crop_h, device=device)
                 conv = F.conv1d(row_energy.view(1, 1, -1), kernel)[0, 0]
                 best_y = int(torch.argmax(conv).item())
-                crop_raw_batch = raw_batch[:, :, best_y : best_y + target_crop_h, :]
-            else:
-                crop_raw_batch = raw_batch
-        else:
-            crop_raw_batch = raw_batch
+                crop_raw_batch = crop_raw_batch[:, :, best_y : best_y + target_crop_h, :]
 
         _, _, cur_h, cur_w = crop_raw_batch.shape
         scale_fg = min(width / cur_w, height / cur_h)
@@ -338,7 +384,7 @@ def compose_panel_cuda(
         x_off = (width - fg_w) // 2
         y_off = (height - fg_h) // 2
 
-        # 2. Background generation on CUDA
+        # 3. Background generation on CUDA
         if background_mode != "blurred":
             col = (13.0, 13.0, 18.0)
             canvas = (
@@ -348,14 +394,14 @@ def compose_panel_cuda(
             )
         else:
             canvas = generate_cinematic_backdrop(
-                raw_batch, out_h=height, out_w=width, sigma=8.5, darken=darken
+                crop_raw_batch, out_h=height, out_w=width, sigma=8.5, darken=darken
             )
 
         canvas[:, y_off : y_off + fg_h, x_off : x_off + fg_w] = fg_tensor
         rgb_canvas = canvas.clamp(0, 255).to(torch.uint8).permute(1, 2, 0).contiguous()
         return rgb_to_nv12(rgb_canvas), rgb_canvas, 0, src_ratio, raw_batch
 
-    # 3. Tall panel with vertical pan: scale width prominently and scroll height
+    # 4. Full artwork tall panel: scale width prominently and execute upside vertical pan
     fg_w = min(width, max(1080, int(round(src_w * 1.35))))
     scale_fg = fg_w / float(src_w)
     fg_h = int(round(src_h * scale_fg))
@@ -521,30 +567,44 @@ def render_pynv(
     shots: list[Shot] = []
     for p_group in runs_by_panel:
         pid = p_group[0].panel_id
-        path = panels_dir / f"{pid}.png"
-        if not path.exists():
-            path = panels_dir / f"{pid}.jpg"
+        path = None
+        for ext in (".webp", ".png", ".jpg"):
+            cand = panels_dir / f"{pid}{ext}"
+            if cand.exists():
+                path = cand
+                break
 
-        is_tall_ratio = False
-        if path.exists():
+        is_tall_full_art = False
+        if path and path.exists():
             try:
                 with Image.open(path) as img:
-                    is_tall_ratio = (img.height / float(max(1, img.width))) > 1.05
+                    arr = np.array(img.convert("RGB"))
+                    h_val, w_val, _ = arr.shape
+                    ratio = h_val / float(max(1, w_val))
+                    if ratio >= 1.55:
+                        # Check top/bot 15% for bubbles
+                        top = arr[: int(h_val * 0.15), :]
+                        bot = arr[-int(h_val * 0.15) :, :]
+                        top_w = np.mean((top[:, :, 0] > 220) & (top[:, :, 1] > 220) & (top[:, :, 2] > 220))
+                        bot_w = np.mean((bot[:, :, 0] > 220) & (bot[:, :, 1] > 220) & (bot[:, :, 2] > 220))
+                        is_tall_full_art = (top_w < 0.25) and (bot_w < 0.25)
             except Exception:
-                is_tall_ratio = False
+                is_tall_full_art = False
 
-        if pan_tall and is_tall_ratio:
-            # Preserve individual clause beats for camera tracking!
+        if pan_tall and is_tall_full_art:
+            # Preserve individual clause beats for camera tracking across full artwork!
             shots.extend(p_group)
         else:
-            # Standard panel: join consecutive repeats into one hold
+            # Standard & cropped bubble panels: join consecutive repeats into one continuous hold for silky zoom
             shots.extend(merge_repeats(p_group))
 
     shots = _clamp_durations(shots, min_seconds=min_shot, max_seconds=max_shot)
 
     clips: list[Clip] = []
     for shot in shots:
-        path = panels_dir / f"{shot.panel_id}.png"
+        path = panels_dir / f"{shot.panel_id}.webp"
+        if not path.exists():
+            path = panels_dir / f"{shot.panel_id}.png"
         if not path.exists():
             path = panels_dir / f"{shot.panel_id}.jpg"
         if path.exists():
@@ -677,24 +737,24 @@ def render_pynv(
                         prog = u * u * (3.0 - 2.0 * u)
 
                         if pattern == 0:
-                            # Subtle Zoom-In (1.000 -> 1.035)
-                            scale = 1.000 + 0.035 * prog
+                            # Dynamic Push-In (Smooth Zoom In: 1.000 -> 1.085)
+                            scale = 1.000 + 0.085 * prog
                             tx_px = 0.0
                             ty_px = 0.0
                         elif pattern == 1:
-                            # Subtle Pan Right with base scale 1.025
-                            scale = 1.025
-                            tx_px = -12.0 + 24.0 * prog
+                            # Dynamic Pull-Out (Smooth Zoom Out: 1.085 -> 1.005)
+                            scale = 1.085 - 0.080 * prog
+                            tx_px = 0.0
                             ty_px = 0.0
                         elif pattern == 2:
-                            # Subtle Zoom-In with gentle vertical upward drift
-                            scale = 1.000 + 0.030 * prog
+                            # Target Focus Push-In (Face / Character Focus Zoom: 1.000 -> 1.090)
+                            scale = 1.000 + 0.090 * prog
                             tx_px = 0.0
-                            ty_px = 6.0 - 12.0 * prog
+                            ty_px = -14.0 * prog
                         else:  # pattern == 3:
-                            # Subtle Pan Left with base scale 1.025
-                            scale = 1.025
-                            tx_px = 12.0 - 24.0 * prog
+                            # Dynamic Pulse Zoom (1.020 -> 1.095)
+                            scale = 1.020 + 0.075 * prog
+                            tx_px = 0.0
                             ty_px = 0.0
 
                         inv_s = 1.0 / max(0.01, scale)
@@ -778,11 +838,11 @@ def render_pynv(
                             _write_packet(f_out, packet)
                             frames_encoded += 1
                 elif run_len > 1:
-                    # Multi-beat (> 2): Cut to Section `pos` out of `run_len` with gentle breathing drift
-                    y_target = (pos / float(run_len - 1)) * float(travel)
+                    # Multi-beat (> 2): Cut to Section `pos` out of `run_len` panning upside (bottom to top)
+                    y_target = (1.0 - (pos / float(max(1, run_len - 1)))) * float(travel)
                     drift = min(60.0, float(travel) * 0.05)
-                    y_start = max(0.0, y_target - drift * 0.5)
-                    y_end = min(float(travel), y_start + drift)
+                    y_start = min(float(travel), y_target + drift * 0.5)
+                    y_end = max(0.0, y_start - drift)
                     for f in range(clip.frames):
                         prog = compute_easy_ease_progress(f, clip.frames, hold_ratio=0.15)
                         y_val = y_start + prog * (y_end - y_start)
@@ -791,25 +851,25 @@ def render_pynv(
                         _write_packet(f_out, packet)
                         frames_encoded += 1
                 else:
-                    # Single-beat: Speed-capped gentle drift from the top (max 140 px/sec) with Easy Ease
+                    # Single-beat: Upside pan from bottom to top (max 140 px/sec) with Easy Ease
                     dur = clip.frames / float(fps)
                     travel_cap = min(float(travel), 140.0 * dur)
                     for f in range(clip.frames):
                         prog = compute_easy_ease_progress(f, clip.frames, hold_ratio=0.15)
-                        y_val = prog * travel_cap
+                        y_val = (1.0 - prog) * travel_cap
                         curr_nv12 = slice_subpixel_nv12(rgb_strip, y_val, height)
                         packet = encoder.Encode(curr_nv12)
                         _write_packet(f_out, packet)
                         frames_encoded += 1
             else:
-                # Moderate/medium tall panel (1.05 < ratio < 3.5)
-                # Less than ~2-3 panels long: use buttery smooth sliding motion across the strip
+                # Moderate/medium tall full artwork panel:
+                # Buttery smooth upside pan (bottom to top) across the full artwork strip
                 total_dur = total_run_frames / float(fps)
                 travel_cap = min(float(travel), 150.0 * total_dur)
                 for f in range(clip.frames):
                     g = frame_offset + f
                     prog = compute_easy_ease_progress(g, total_run_frames, hold_ratio=0.12)
-                    y_val = prog * travel_cap
+                    y_val = (1.0 - prog) * travel_cap
                     curr_nv12 = slice_subpixel_nv12(rgb_strip, y_val, height)
                     packet = encoder.Encode(curr_nv12)
                     _write_packet(f_out, packet)

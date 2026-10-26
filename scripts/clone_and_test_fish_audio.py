@@ -5,15 +5,17 @@ import os
 import sys
 import time
 from pathlib import Path
+
 import httpx
-import soundfile as sf
 import numpy as np
+import soundfile as sf
+
 
 def get_fish_api_key() -> str:
     key = os.environ.get("FISH_API_KEY", "")
     for env_path in [Path("config/.env"), Path(".env")]:
         if not key and env_path.exists():
-            with open(env_path, "r", encoding="utf-8") as f:
+            with open(env_path, encoding="utf-8") as f:
                 for line in f:
                     line = line.strip()
                     if line.startswith("FISH_API_KEY="):
@@ -39,7 +41,7 @@ def synthesize_1min_test(voice_id: str):
         return False
 
     print(f"\n=== Synthesizing 1-Minute Test Audio with Voice ID: {voice_id} ===")
-    
+
     test_narration_paragraphs = [
         "Kim Gong-ja stares at the towering holographic status window hovering in the dead of night. For ten grueling years, he scraped by as a bottom-tier hunter in the grand spire, desperately envious of the legendary Flame Emperor Yoo Soo-ha.",
         "Every single day, Gong-ja prayed for an S-rank miracle, anything to drag him out of the gutter. But when the system finally answered his desperate plea, it didn't bestow glory or invincible martial power.",
@@ -97,7 +99,7 @@ def synthesize_1min_test(voice_id: str):
     out_path.parent.mkdir(parents=True, exist_ok=True)
     sf.write(str(out_path), final_waveform, output_sr, subtype="PCM_16")
 
-    print(f"\nSUCCESS! 1-Minute Test Audio Generated:")
+    print("\nSUCCESS! 1-Minute Test Audio Generated:")
     print(f"- Output file: {out_path.resolve()}")
     print(f"- Total duration: {duration_s:.1f} seconds")
     print(f"- Sample rate: {output_sr} Hz")

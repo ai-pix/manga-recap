@@ -7,7 +7,6 @@ Target: ~800 words (~5.0 minutes).
 
 from __future__ import annotations
 
-import json
 import time
 from pathlib import Path
 

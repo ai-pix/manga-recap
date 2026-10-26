@@ -7,7 +7,7 @@ project:
   slug: manga-recap
   # Selects the series bible at data/series/<series_name>/series.md. Set this to
   # the manga you are working on so the narrator uses its real character names.
-  series_name: sss-class-revival-hunter
+  series_name: overgeared
   # Kaggle API credentials live in ~/.kaggle/kaggle.json (already present).
 
 paths:
@@ -413,7 +413,7 @@ tts:
   # Fish Audio settings
   fish_model: s2.1-pro-free
   fish_voice_id: "802e3bc2b27e49c2995d23ef70e6ac89"  # Energetic YouTube Recap Voice
-  fish_concurrency: 8
+  fish_concurrency: 4
 
   # Gemini 3.8 Flash TTS settings
   # Voices: "Puck" (energetic/friendly recap male), "Charon" (deep cinematic male), "Fenrir" (confident male)
@@ -498,9 +498,10 @@ render:
   blur_radius: 16
 
   blur_darken: 0.12
-  # Disable sliding vertical motion on tall panels; smart-crop to face & action instead
-  pan_tall: false
-  # Enable subtle camera motion (subtle zoom-in 1.00x->1.035x and subtle pan left/right) on CUDA in GPU VRAM
+  # Smart camera motion: Upside panning (bottom-to-top) ONLY for full-bleed artwork panels;
+  # smart-crops speech bubbles from top/bottom on all other panels with dynamic cinematic zooming motion
+  pan_tall: true
+  # Enable dynamic GPU CUDA zooming motion (push-in, pull-out, face-focus zoom) on CUDA in GPU VRAM
   subtle_motion: true
   kenburns:
     # Disabled to ensure 100% pure GPU hardware NVENC encoding with ZERO CPU software filtergraphs.

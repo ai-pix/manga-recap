@@ -6,7 +6,6 @@ High-retention YouTube manhwa recap style (Mamoru style).
 
 from __future__ import annotations
 
-import json
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -758,7 +757,7 @@ def build_and_save() -> bool:
 
     script_file = ScriptFile(
         chapter_id=f"sss-class-revival-hunter/{ch_id}",
-        title=f"SSS-Class Revival Hunter - Chapter 31",
+        title="SSS-Class Revival Hunter - Chapter 31",
         series="sss-class-revival-hunter",
         created_at=datetime.now(timezone.utc).isoformat(),
         model="mercury-2.5",
@@ -777,7 +776,7 @@ def build_and_save() -> bool:
         with open(alt_script_path, "w", encoding="utf-8") as f:
             f.write(script_file.model_dump_json(indent=2))
 
-    print(f"=== SSS-Class Revival Hunter Ch 31 Script ===")
+    print("=== SSS-Class Revival Hunter Ch 31 Script ===")
     print(f"Total Blocks: {len(script_blocks)}")
     print(f"Total Spoken Words: {script_file.total_words}")
     print(f"Validation Result: ok={report.ok}")

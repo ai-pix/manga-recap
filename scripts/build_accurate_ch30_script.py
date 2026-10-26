@@ -9,9 +9,9 @@ Mamoru-style YouTube recap tone:
   and baiting Marcus Calenprius into a private standoff.
 """
 
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
-import sys
 
 from manga_recap.core.config import load_config
 from manga_recap.core.schema import (

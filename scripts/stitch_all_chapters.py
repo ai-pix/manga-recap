@@ -64,7 +64,7 @@ def run_stitch(
     print(f"STITCHING {len(videos)} CHAPTERS INTO COMPACT FULL MOVIE")
     print(f"Output: {output_path}")
     print(f"GPU Video Encoder: {codec} (preset={preset}, cq={cq})")
-    print(f"Audio Codec: aac (128 kbps stereo)")
+    print("Audio Codec: aac (128 kbps stereo)")
     print("=" * 70)
 
     cmd = [

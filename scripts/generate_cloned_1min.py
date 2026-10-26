@@ -3,6 +3,7 @@
 import io
 import time
 from pathlib import Path
+
 import httpx
 import numpy as np
 import ormsgpack
@@ -12,7 +13,7 @@ import soundfile as sf
 api_key = ""
 for env_path in [Path("config/.env"), Path(".env")]:
     if not api_key and env_path.exists():
-        with open(env_path, "r", encoding="utf-8") as f:
+        with open(env_path, encoding="utf-8") as f:
             for line in f:
                 if line.startswith("FISH_API_KEY="):
                     api_key = line.split("=", 1)[1].strip().strip("\"'")
@@ -58,7 +59,7 @@ script_blocks = [
     },
 ]
 
-print(f"=== Synthesizing 1-Minute Cloned Narration using Fish Audio S2.1-Pro-Free ===")
+print("=== Synthesizing 1-Minute Cloned Narration using Fish Audio S2.1-Pro-Free ===")
 print(f"Reference Audio: {ref_path.name} ({len(ref_audio_bytes)} bytes)")
 print(f"Total Blocks: {len(script_blocks)}")
 
@@ -121,7 +122,7 @@ out_file = Path("data/voice_cloning/cloned_youtube_voice_1min_test.wav")
 sf.write(str(out_file), final_waveform, output_sr, subtype="PCM_16")
 
 print("\n" + "="*60)
-print(f"CLONED VOICE TEST NARATION COMPLETE!")
+print("CLONED VOICE TEST NARATION COMPLETE!")
 print(f"Output File: {out_file.resolve()}")
 print(f"Total Duration: {total_duration:.2f} seconds (~{total_duration/60:.2f} minutes)")
 print(f"Audio Quality: {output_sr} Hz, 16-bit PCM WAV (Studio Quality)")

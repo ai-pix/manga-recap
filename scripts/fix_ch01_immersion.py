@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+
 from manga_recap.core.config import load_config
 from manga_recap.core.schema import DescriptionFile, ScriptFile, load_model
 from manga_recap.stages.s3_script.validate import validate
@@ -38,7 +39,7 @@ desc_model = load_model(desc_path, DescriptionFile)
 script_model = load_model(script_path, ScriptFile)
 report = validate(script_model, desc_model, cfg)
 
-print(f"Chapter 1 script updated.")
+print("Chapter 1 script updated.")
 print(f"Validation OK: {report.ok}")
 if not report.ok:
     print(report.render())

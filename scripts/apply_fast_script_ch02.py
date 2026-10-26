@@ -1,7 +1,8 @@
 import json
 from pathlib import Path
+
 from manga_recap.core.config import load_config
-from manga_recap.core.schema import DescriptionFile, ScriptFile, load_model, save_model
+from manga_recap.core.schema import DescriptionFile, ScriptFile, load_model
 from manga_recap.stages.s3_script.validate import validate
 
 ch_dir = Path("data/chapters/revival_hunter_ch02")

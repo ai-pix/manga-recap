@@ -1,6 +1,7 @@
-import sys
 import json
+import sys
 from pathlib import Path
+
 
 def get_context(ch_id):
     p = Path(f"data/chapters/{ch_id}/03_descriptions.json")
@@ -9,7 +10,7 @@ def get_context(ch_id):
         return
     desc = json.loads(p.read_text(encoding="utf-8"))
     panels = desc.get("panels", [])
-    
+
     clean_panels = []
     skipped = []
     for p_info in panels:
@@ -17,7 +18,7 @@ def get_context(ch_id):
         setting = str(p_info.get("setting", "")).lower()
         desc_txt = str(p_info.get("description", "")).lower()
         is_ad = p_info.get("is_credits_or_ad", False)
-        
+
         is_black = (
             "black" in setting or
             "text" in setting or
@@ -29,11 +30,11 @@ def get_context(ch_id):
             skipped.append((pid, p_info))
         else:
             clean_panels.append(p_info)
-            
+
     print(f"=== {ch_id} ===")
     print(f"Total: {len(panels)} | Art panels to narrate: {len(clean_panels)} | Skipped black/text: {len(skipped)}")
     print(f"Skipped IDs: {[s[0] for s in skipped]}")
-    
+
     # Save a clean context file for easy script generation
     out_file = Path(f"data/chapters/{ch_id}/_script_context.json")
     out_file.write_text(json.dumps({

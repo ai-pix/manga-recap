@@ -1,12 +1,10 @@
 """Google Drive OAuth re-authorization helper."""
 
 import json
-import os
 import sys
 from pathlib import Path
 
 from google_auth_oauthlib.flow import InstalledAppFlow
-from google.oauth2.credentials import Credentials
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CLIENT_SECRETS = REPO_ROOT / "client_secrets.json"

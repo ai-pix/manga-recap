@@ -2,6 +2,7 @@ import json
 import sys
 from pathlib import Path
 
+
 def inspect(ch_num):
     ch_id = f"ch{ch_num:02d}"
     p = Path(f"data/chapters/sss-class-revival-hunter/{ch_id}/03_descriptions.json")

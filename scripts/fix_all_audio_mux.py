@@ -1,6 +1,6 @@
-import subprocess
 import json
 import os
+import subprocess
 from pathlib import Path
 
 for i in range(1, 6):
@@ -9,11 +9,11 @@ for i in range(1, 6):
     mp4_in = ch_dir / "07_final.mp4"
     wav_in = ch_dir / "05_narration.wav"
     mp4_fixed = ch_dir / "07_final_fixed.mp4"
-    
+
     if not mp4_in.exists() or not wav_in.exists():
         print(f"Skipping {ch}: files not found")
         continue
-        
+
     print(f"Fixing audio mux for {ch}...")
     cmd = [
         "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
@@ -28,10 +28,10 @@ for i in range(1, 6):
         str(mp4_fixed)
     ]
     subprocess.run(cmd, check=True)
-    
+
     # Overwrite 07_final.mp4 with 07_final_fixed.mp4
     os.replace(mp4_fixed, mp4_in)
-    
+
     # Verify streams
     probe = subprocess.check_output([
         "ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams", str(mp4_in)

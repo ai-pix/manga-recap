@@ -1,6 +1,6 @@
-import time
 import sys
-from pathlib import Path
+import time
+
 from manga_recap.core.config import load_config
 from manga_recap.core.paths import ChapterPaths
 from manga_recap.stages.s4_speech import run as run_speech
@@ -11,10 +11,10 @@ cfg = load_config()
 start_ch = int(sys.argv[1]) if len(sys.argv) > 1 else 7
 end_ch = int(sys.argv[2]) if len(sys.argv) > 2 else 40
 
-print(f"============================================================")
+print("============================================================")
 print(f"BATCH FISH AUDIO SYNTHESIS: Chapters {start_ch:02d} to {end_ch:02d}")
-print(f"Model: s2.1-pro-free | Voice: Barbarian (802e3bc2b27e49c2995d23ef70e6ac89)")
-print(f"============================================================")
+print("Model: s2.1-pro-free | Voice: Barbarian (802e3bc2b27e49c2995d23ef70e6ac89)")
+print("============================================================")
 
 t_all = time.time()
 completed = 0
@@ -23,12 +23,12 @@ failed = []
 for i in range(start_ch, end_ch + 1):
     ch_id = f"revival_hunter_ch{i:02d}"
     paths = ChapterPaths.create(ch_id)
-    
+
     if (paths.narration_file.exists() and paths.timeline_file.exists()):
         print(f"[{i:02d}/{end_ch:02d}] {ch_id}: Already synthesized, skipping.")
         completed += 1
         continue
-        
+
     print(f"\n[{i:02d}/{end_ch:02d}] Synthesizing {ch_id}...")
     t0 = time.time()
     try:
@@ -42,9 +42,9 @@ for i in range(start_ch, end_ch + 1):
         print(f"  -> FAILED: {exc}")
         failed.append((ch_id, str(exc)))
 
-print(f"\n============================================================")
+print("\n============================================================")
 print(f"BATCH SYNTHESIS FINISHED in {time.time() - t_all:.1f}s!")
 print(f"Successfully synthesized: {completed}/{end_ch - start_ch + 1}")
 if failed:
     print(f"Failed chapters: {failed}")
-print(f"============================================================")
+print("============================================================")

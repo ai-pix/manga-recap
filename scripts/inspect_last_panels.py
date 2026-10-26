@@ -17,13 +17,13 @@ for i in range(1, 6):
         txt = " ".join(p.get("speech_bubbles") or []).lower()
         sfx_val = p.get("sfx_text") or ""
         sfx = " ".join(sfx_val).lower() if isinstance(sfx_val, list) else str(sfx_val).lower()
-        
+
         # Check for title/logo/credits/ad
         bad_words = ["logo", "title", "series logo", "tapas", "reminder", "support the official", "revival hunter"]
         found = [w for w in bad_words if w in act or w in txt or w in sfx]
         if found:
             flagged.append((b["block_id"], pid, found, act[:70], b["narration"][:60]))
-            
+
     if flagged:
         print(f"FLAGGED {len(flagged)} BLOCKS IN CH{i}:")
         for f in flagged:

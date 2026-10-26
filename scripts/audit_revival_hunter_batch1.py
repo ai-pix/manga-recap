@@ -1,15 +1,17 @@
 """Audit Chapters 1 to 10 for SSS-Class Revival Hunter."""
 
 from pathlib import Path
+
 from manga_recap.core.config import load_config
 from manga_recap.core.schema import DescriptionFile, ScriptFile, load_model
 from manga_recap.stages.s3_script.validate import validate
+
 
 def audit():
     cfg = load_config()
     print(f"{'CHAPTER':<10} | {'PANELS':<8} | {'BLOCKS':<8} | {'WORDS':<8} | {'MINUTES':<8} | {'VALID':<6} | {'SUMMARY'}")
     print("-" * 65)
-    
+
     total_words = 0
     total_blocks = 0
     all_valid = True

@@ -112,11 +112,11 @@ def enforce_word_count(text: str, panel_info: dict[str, Any]) -> str:
         char_str = "Bae Hu-ryeong"
 
     pad_suffixes = [
-        f"as the high-stakes confrontation escalates rapidly inside the tower.",
-        f"with unwavering determination burning brightly in his eyes.",
-        f"bracing himself for whatever deadly trial comes next.",
-        f"refusing to back down in this unforgiving trial.",
-        f"analyzing the lethal situation unfolding directly before him.",
+        "as the high-stakes confrontation escalates rapidly inside the tower.",
+        "with unwavering determination burning brightly in his eyes.",
+        "bracing himself for whatever deadly trial comes next.",
+        "refusing to back down in this unforgiving trial.",
+        "analyzing the lethal situation unfolding directly before him.",
     ]
 
     for pad in pad_suffixes:
@@ -243,7 +243,7 @@ Return JSON with exactly {len(expected_pids)} blocks covering panel IDs: {expect
                 results = []
                 for p in chunk_panels:
                     pid = p["panel_id"]
-                    narr = f"Gong-ja presses forward with relentless resolve as the trial reaches peak intensity."
+                    narr = "Gong-ja presses forward with relentless resolve as the trial reaches peak intensity."
                     narr = enforce_word_count(narr, p)
                     results.append({"panel_id": pid, "narration": narr})
                 return results
@@ -262,7 +262,7 @@ def generate_chapter_script_and_builder(ch_num: int, chunk_size: int = 12) -> bo
         print(f"[{ch_id}] Error: missing {desc_path}")
         return False
 
-    with open(sum_path, "r", encoding="utf-8") as f:
+    with open(sum_path, encoding="utf-8") as f:
         summary = f.read()
 
     desc_file = load_model(desc_path, DescriptionFile)
@@ -272,9 +272,9 @@ def generate_chapter_script_and_builder(ch_num: int, chunk_size: int = 12) -> bo
     story_panels = [p for p in desc_file.panels if not p.is_credits_or_ad]
     panel_dicts = [p.model_dump() for p in story_panels]
 
-    print(f"\n==========================================")
+    print("\n==========================================")
     print(f"[{ch_id}] Processing {len(story_panels)} story panels (Total: {len(desc_file.panels)})...")
-    print(f"==========================================")
+    print("==========================================")
 
     total_chunks = (len(panel_dicts) + chunk_size - 1) // chunk_size
     all_narrations: list[dict[str, str]] = []

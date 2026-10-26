@@ -1,6 +1,7 @@
 import json
 import sys
 from pathlib import Path
+
 from manga_recap.core.config import load_config
 from manga_recap.core.schema import DescriptionFile, ScriptFile, load_model
 from manga_recap.stages.s3_script.validate import validate
@@ -22,16 +23,16 @@ bad_panels = {
 for ch, pids in bad_panels.items():
     desc_p = Path(f"data/chapters/{ch}/03_descriptions.json")
     script_p = Path(f"data/chapters/{ch}/04_script.json")
-    
+
     desc_data = json.load(open(desc_p, encoding="utf-8"))
     script_data = json.load(open(script_p, encoding="utf-8"))
-    
+
     # Mark in descriptions as skippable
     for p in desc_data["panels"]:
         if p["panel_id"] in pids:
             p["is_credits_or_ad"] = True
             p["setting"] = "pruned_title_card"
-            
+
     # Remove or replace blocks in script
     # Filter out blocks whose only panels are in pids
     new_blocks = []
@@ -58,16 +59,16 @@ for ch, pids in bad_panels.items():
     # Renumber blocks cleanly
     for idx, b in enumerate(new_blocks, start=1):
         b["block_id"] = f"b{idx:03d}"
-        
+
     script_data["blocks"] = new_blocks
     script_data["target_words"] = sum(len(b["narration"].split()) for b in new_blocks)
-    
+
     with open(desc_p, "w", encoding="utf-8") as f:
         json.dump(desc_data, f, indent=2, ensure_ascii=False)
-        
+
     with open(script_p, "w", encoding="utf-8") as f:
         json.dump(script_data, f, indent=2, ensure_ascii=False)
-        
+
     # Validate
     dm = load_model(desc_p, DescriptionFile)
     sm = load_model(script_p, ScriptFile)

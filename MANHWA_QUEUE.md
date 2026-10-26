@@ -4,8 +4,8 @@ Rank-ordered queue of upcoming manhwa series scheduled for recap pipeline proces
 
 | Rank | Title | Slug | Status | Genre / Themes |
 |:---:|---|---|:---:|---|
-| 1 | SSS-Class Revival Hunter | `sss-class-revival-hunter` | Panels Ready (Ch 1–40: 3,251 panels) | Tower Climb, Regression, Psychological, Fantasy |
-| 2 | Overgeared | `overgeared` | Pending | VRMMO, Blacksmithing, Progression Fantasy |
+| 1 | SSS-Class Revival Hunter | `sss-class-revival-hunter` | **Completed (4h Movie + 10 Shorts Live)** | Tower Climb, Regression, Psychological, Fantasy |
+| 2 | Overgeared | `overgeared` | **Cropped (Ch 01–30: 2,517 panels ready)** | VRMMO, Blacksmithing, Progression Fantasy |
 | 3 | Omniscient Reader's Viewpoint | `omniscient-readers-viewpoint` | Pending | Apocalypse, Meta-Fiction, Constellations, Action |
 | 4 | Tomb Raider King | `tomb-raider-king` | Pending | Relics, Heists, Revenge, Modern Fantasy |
 | 5 | Eleceed | `eleceed` | Pending | Awakened, Supernatural, Martial Arts, Comedy |

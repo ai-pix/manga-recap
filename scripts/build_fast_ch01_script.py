@@ -6,8 +6,9 @@ Pivots from 50-minute origin drag into a fast 2.2-minute adrenaline rush.
 """
 
 from __future__ import annotations
-from datetime import datetime, timezone
+
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 from manga_recap.core.config import load_config
@@ -72,7 +73,7 @@ def update_and_validate():
     script_path = ch_dir / "04_script.json"
 
     # 1. Update 03_descriptions.json so skipped panels are marked skippable
-    with open(desc_path, "r", encoding="utf-8") as f:
+    with open(desc_path, encoding="utf-8") as f:
         desc_data = json.load(f)
 
     for p in desc_data["panels"]:

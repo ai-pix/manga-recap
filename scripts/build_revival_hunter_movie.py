@@ -74,8 +74,8 @@ def main():
     concat_file = package_dir / "concat_list.txt"
     concat_file.write_text("\n".join(concat_lines), encoding="utf-8")
 
-    # Run FFmpeg concat stream copy with strict PTS/DTS regeneration and faststart
-    print(f"Concatenating losslessly with FFmpeg stream copy to: {output_movie}")
+    # Run FFmpeg concat using hardware NVENC re-encode (strictly following stitch_all_chapters.py proven pattern)
+    print(f"Stitching cleanly with hardware NVENC re-encode to: {output_movie}")
     cmd = [
         "ffmpeg",
         "-y",
@@ -85,10 +85,24 @@ def main():
         "0",
         "-i",
         str(concat_file),
-        "-c",
-        "copy",
-        "-fflags",
-        "+genpts",
+        "-c:v",
+        "h264_nvenc",
+        "-preset",
+        "p4",
+        "-cq",
+        "28",
+        "-b:v",
+        "2200k",
+        "-maxrate",
+        "3500k",
+        "-bufsize",
+        "6000k",
+        "-pix_fmt",
+        "yuv420p",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "128k",
         "-movflags",
         "+faststart",
         str(output_movie),

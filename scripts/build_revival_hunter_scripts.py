@@ -81,7 +81,7 @@ def call_mercury_chunk(
     max_retries: int = 3,
 ) -> list[dict[str, Any]]:
     expected_pids = [p["panel_id"] for p in chunk_panels]
-    
+
     panel_descriptions: list[str] = []
     for p in chunk_panels:
         pid = p["panel_id"]
@@ -91,7 +91,7 @@ def call_mercury_chunk(
             action = "; ".join(f"{k}: {v}" for k, v in action.items())
         speech_raw = p.get("speech_bubbles", [])
         speech = " | ".join(speech_raw) if isinstance(speech_raw, list) else str(speech_raw)
-        
+
         line = f"[{pid}] Characters: {chars} | Action: {action}"
         if speech:
             line += f' | Dialogue: "{speech}"'
@@ -193,7 +193,7 @@ Return JSON with exactly {len(expected_pids)} blocks covering panel IDs: {expect
 
                 # Ensure non-empty
                 if not narr or len(narr.split()) < 3:
-                    narr = f"Gong-ja watches silently as events unfold before him."
+                    narr = "Gong-ja watches silently as events unfold before him."
 
                 result_blocks.append({
                     "panel_id": pid,

@@ -1,6 +1,7 @@
-import sys
 import json
+import sys
 from pathlib import Path
+
 
 def summarize(ch_id):
     desc_p = Path(f"data/chapters/{ch_id}/03_descriptions.json")
@@ -9,7 +10,7 @@ def summarize(ch_id):
         return
     desc = json.loads(desc_p.read_text(encoding="utf-8"))
     panels = desc.get("panels", [])
-    
+
     black_panels = []
     art_panels = []
     for p in panels:
@@ -22,7 +23,7 @@ def summarize(ch_id):
             black_panels.append(pid)
         else:
             art_panels.append(p)
-            
+
     print(f"=== {ch_id} ===")
     print(f"Total panels: {len(panels)} | Art panels: {len(art_panels)} | Black/skippable: {len(black_panels)}")
     print(f"Black panel IDs: {black_panels}")

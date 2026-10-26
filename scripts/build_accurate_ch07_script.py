@@ -6,7 +6,6 @@ High-retention YouTube manhwa recap style (Mamoru style).
 
 from __future__ import annotations
 
-import json
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -187,7 +186,7 @@ def build_and_save():
         with open(alt_script_path, "w", encoding="utf-8") as f:
             f.write(script_file.model_dump_json(indent=2))
 
-    print(f"=== SSS-Class Revival Hunter Ch 07 Script ===")
+    print("=== SSS-Class Revival Hunter Ch 07 Script ===")
     print(f"Total Blocks: {len(script_blocks)}")
     print(f"Total Spoken Words: {script_file.total_words}")
     print(f"Estimated Narration Time: ~{script_file.total_words / 150:.1f} minutes")

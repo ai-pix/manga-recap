@@ -1,15 +1,16 @@
 """Automatically update the YouTube video title and description once uploaded."""
 
 import time
-import json
 from pathlib import Path
+
 from manga_recap.stages.s7_publish.youtube import YouTubeUploader, parse_metadata_file
+
 
 def update_metadata():
     uploader = YouTubeUploader()
     meta_path = Path("data/export/revival_hunter_movie_package/metadata.txt")
     meta_dict = parse_metadata_file(meta_path)
-    
+
     print("Waiting for video upload to complete and record video_id...")
     video_id = None
     while True:
@@ -19,14 +20,14 @@ def update_metadata():
             video_id = rec["video_id"]
             break
         time.sleep(15)
-        
+
     if not video_id:
         print("Video ID not found in upload state.")
         return
 
     print(f"Found uploaded video_id: {video_id}. Updating snippet...")
     service = uploader.get_service()
-    
+
     # Update snippet with sanitized title and description
     body = {
         "id": video_id,
