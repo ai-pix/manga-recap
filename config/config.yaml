@@ -7,7 +7,7 @@ project:
   slug: manga-recap
   # Selects the series bible at data/series/<series_name>/series.md. Set this to
   # the manga you are working on so the narrator uses its real character names.
-  series_name: overgeared
+  series_name: tomb-raider-king
   # Kaggle API credentials live in ~/.kaggle/kaggle.json (already present).
 
 paths:
