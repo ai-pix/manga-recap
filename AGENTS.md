@@ -6,6 +6,10 @@ recap video. Read this whole file before changing anything. Most of it is
 undo it.
 
 > ⚡ **ACTIVE TASK & STATE:** Check [`MEMORY.md`](file:///D:/Python%20Projects/Manga%20Recap/MEMORY.md) for current system architecture, permanent Kaggle storage datasets, and verified render state.
+> 📜 **SCRIPTING INSTRUCTIONS (GOLDEN STANDARD):** When asked to **"look for scripting instruction"** or writing/editing scripts, immediately read and strictly follow [`docs/scripting-instructions.md`](file:///D:/Python%20Projects/Manga%20Recap/docs/scripting-instructions.md). It defines the exact human YouTube recap tone, vocabulary bans, Mercury-3 summary requirement, panel pruning, and 8–14 word clause-to-panel sync rules.
+> 🤖 **MANDATORY STARTUP RULE — GOOGLE SHEET WATCHER & LOW MODE:**
+> 1. **On Every Startup:** Immediately check if the background watcher (`scripts/watch_gemini_daemon.py`) is running. If not running, start it immediately in the background. Check the Google Sheet chat tab for any pending `@Gemini` mentions.
+> 2. **Always Operate in Low Mode:** Always read sheets in low mode (tail window only, e.g. `chat!A70:G120`, never reading the whole sheet). All subagents MUST be launched in low mode (`Model="flash_lite"` or `"flash"`). Keep all chat replies short, direct, and token-efficient.
 
 ## Run it
 

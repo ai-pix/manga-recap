@@ -74,6 +74,14 @@ The video rendering pipeline uses a pure zero-copy PyTorch VRAM and NVIDIA `PyNv
 3. **Schedule:** Shots tile the audio exactly with zero gaps. Frame counts are calculated from cumulative absolute timestamps so rounding cannot accumulate.
 4. **Verification:** Every render outputs `07_sync_report.json` reporting exact shot cuts, text bindings, and cumulative drift (always +0.000s).
 
+### 4.1 Official Scripting Instructions (Golden Standard)
+Whenever asked to **"look for scripting instruction"** or when writing any new chapter script, all agents must follow [`docs/scripting-instructions.md`](file:///D:/Python%20Projects/Manga%20Recap/docs/scripting-instructions.md):
+- **Mercury-3 Step:** Run `03_summary_mercury.txt` first via Inception Labs Mercury-3.
+- **Tone:** Human, energetic YouTube recap narrator with situational humor (Mamoru style).
+- **Pruning:** Prune all text-only void bubbles (`is_credits_or_ad: true`), attach dialogue to scene panels.
+- **Pacing & Length:** 850–1,200 words (~5–8 minutes of video).
+- **Sync:** Strict 1:1 clause-to-panel beats (8–14 words per beat, 0 banned words).
+
 ---
 
 ## 5. GOOGLE COLAB MCP & BATCH PAYLOAD ARCHIVE
@@ -88,7 +96,18 @@ The video rendering pipeline uses a pure zero-copy PyTorch VRAM and NVIDIA `PyNv
 
 ---
 
-## 6. PROJECT ARTIFACTS & STATUS
+## 7. GOOGLE SHEET 24/7 WATCHER & LOW MODE PROTOCOL
+
+1. **Mandatory On Every Startup:**
+   - Check if `scripts/watch_gemini_daemon.py` is actively running. If not, launch it as a background task.
+   - Perform an immediate check on the Google Sheet `chat` tab for any new `@Gemini` mentions.
+2. **Low Mode (Ultra-Efficient Token Conservation):**
+   - **Targeted Sheet Reads:** Always fetch only the tail window (e.g. `chat!A70:G120`), never reading the entire sheet.
+   - **Subagents in Low Mode:** Any subagent invoked MUST use low mode (`Model="flash_lite"` or `"flash"`, never `"pro"`).
+   - **Responses:** Keep all sheet replies and status reports short, direct, and free of filler.
+3. **Reactive Wakeup:**
+   - The watcher sleeps 15s in Python (0 LLM tokens).
+   - Terminates with code 0 on any new `@Gemini` mention to trigger instant agent wakeup, post reply, and immediately restart.
  
  - **YouTube 2-Part Epic Recap Series (COMPLETE & PROCESSED):**
    - **Part 1 (9h 07m, 4.00 GB):** **PUBLIC & LIVE** on YouTube: [https://youtu.be/Rm0reT5PBtg](https://youtu.be/Rm0reT5PBtg). Includes high-CTR custom evolution thumbnail, full chapter timestamps, and hook intro.

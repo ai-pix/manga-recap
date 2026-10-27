@@ -339,39 +339,8 @@ def compose_panel_cuda(
     )
 
     if not is_full_art:
-        # Panels with speech bubbles at top/bottom or standard panels:
-        # 1. Crop out speech bubbles at top and bottom to isolate the character & artwork
-        if (y_bot - y_top) >= int(src_h * 0.35) and ((y_top > 0) or (y_bot < src_h)):
-            crop_raw_batch = raw_batch[:, :, y_top:y_bot, :]
-        else:
-            crop_raw_batch = raw_batch
-
-        # 2. Smart action/face crop for tall character panels to eliminate excessive vertical framing
-        _, _, cur_h, cur_w = crop_raw_batch.shape
-        cur_ratio = float(cur_h) / float(max(1, cur_w))
-        if cur_ratio > 1.25:
-            target_crop_h = int(min(cur_h, cur_w * 1.25))
-            if target_crop_h < cur_h:
-                sub_raw = crop_raw_batch[0]
-                max_c_sub = sub_raw.max(dim=0)[0]
-                min_c_sub = sub_raw.min(dim=0)[0]
-                sat_sub = (max_c_sub - min_c_sub) / (max_c_sub + 1e-4)
-                lum_sub = 0.299 * sub_raw[0] + 0.587 * sub_raw[1] + 0.114 * sub_raw[2]
-                dy = torch.abs(lum_sub[1:, :] - lum_sub[:-1, :])
-                dy = torch.cat([dy[:1, :], dy], dim=0)
-                dx = torch.abs(lum_sub[:, 1:] - lum_sub[:, :-1])
-                dx = torch.cat([dx[:, :1], dx], dim=1)
-                edges = dy + dx
-
-                bubble_mask = (lum_sub > 225) & (sat_sub < 0.15)
-                black_mask = (lum_sub < 25)
-                valid_mask = (~bubble_mask) & (~black_mask)
-
-                row_energy = ((edges * 0.7 + sat_sub * 120.0) * valid_mask.float()).mean(dim=1)
-                kernel = torch.ones(1, 1, target_crop_h, device=device)
-                conv = F.conv1d(row_energy.view(1, 1, -1), kernel)[0, 0]
-                best_y = int(torch.argmax(conv).item())
-                crop_raw_batch = crop_raw_batch[:, :, best_y : best_y + target_crop_h, :]
+        # Preserve full panel artwork intact without aggressive arbitrary slicing
+        crop_raw_batch = raw_batch
 
         _, _, cur_h, cur_w = crop_raw_batch.shape
         scale_fg = min(width / cur_w, height / cur_h)
@@ -737,23 +706,23 @@ def render_pynv(
                         prog = u * u * (3.0 - 2.0 * u)
 
                         if pattern == 0:
-                            # Dynamic Push-In (Smooth Zoom In: 1.000 -> 1.085)
-                            scale = 1.000 + 0.085 * prog
+                            # Dynamic Push-In (Smooth Subtle Zoom In: 1.000 -> 1.025)
+                            scale = 1.000 + 0.025 * prog
                             tx_px = 0.0
                             ty_px = 0.0
                         elif pattern == 1:
-                            # Dynamic Pull-Out (Smooth Zoom Out: 1.085 -> 1.005)
-                            scale = 1.085 - 0.080 * prog
+                            # Dynamic Pull-Out (Smooth Subtle Zoom Out: 1.025 -> 1.000)
+                            scale = 1.025 - 0.025 * prog
                             tx_px = 0.0
                             ty_px = 0.0
                         elif pattern == 2:
-                            # Target Focus Push-In (Face / Character Focus Zoom: 1.000 -> 1.090)
-                            scale = 1.000 + 0.090 * prog
+                            # Target Focus Push-In (Subtle Zoom: 1.000 -> 1.025)
+                            scale = 1.000 + 0.025 * prog
                             tx_px = 0.0
-                            ty_px = -14.0 * prog
+                            ty_px = 0.0
                         else:  # pattern == 3:
-                            # Dynamic Pulse Zoom (1.020 -> 1.095)
-                            scale = 1.020 + 0.075 * prog
+                            # Dynamic Pulse Zoom (1.005 -> 1.025)
+                            scale = 1.005 + 0.020 * prog
                             tx_px = 0.0
                             ty_px = 0.0
 
