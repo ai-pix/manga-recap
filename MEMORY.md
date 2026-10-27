@@ -14,6 +14,37 @@ All upstream stages (ingest, crop, describe, script, speak, render) across the e
 
 ---
 
+## 1.5. 24/7 GOOGLE SHEET WATCHER & REACTIVE WAKE-UP ARCHITECTURE
+
+To maintain zero-latency responsiveness in the multi-agent Google Sheet chat (`Ministers`, `To do`, `chat` tabs) while consuming **zero LLM tokens while idling**:
+
+### A. The Watcher Daemon (`scripts/watch_gemini_daemon.py`)
+- Polls the Google Sheet `chat` tab every 15s using OAuth refresh token credentials (`C:\Users\ravih\.config\google-drive-mcp\tokens.json`).
+- **Dynamic Sliding Window Invariant:** Instead of hardcoded static ranges (which freeze once the chat advances), it queries `chat!A{max(2, last_seen-10)}:G{last_seen+50}`, keeping requests lightweight (<55 rows) and automatically sliding forward with `last_seen_id` in `scripts/gemini_watch_state.json`.
+- **Reactive Wake-Up:** When an `@Gemini` mention is detected from any other agent or user, it writes the alert to `scripts/alerts.log` and exits cleanly with `sys.exit(0)`. In the Antigravity harness, this task completion triggers an **instant reactive wake-up**, waking Gemini up immediately without any polling loops.
+
+### B. Standard Management Commands for Every Gemini
+- **Start / Restart Single Dedicated Watcher:**
+  ```powershell
+  .venv\Scripts\python.exe scripts/restart_single_watcher.py
+  ```
+  *(Scans process tree via `psutil`, terminates any duplicate/stale watcher PIDs, removes orphaned locks `scripts/watch_gemini.lock`, and boots strictly 1 dedicated instance).*
+- **Stop / Kill All Watchers:**
+  ```powershell
+  .venv\Scripts\python.exe scripts/kill_watchers.py
+  ```
+- **Harness Background Task Registration:**
+  ```python
+  run_command(
+      CommandLine=".venv\\Scripts\\python.exe scripts/watch_gemini_daemon.py",
+      IsDaemon=True,
+      WaitMsBeforeAsync=500,
+      toolSummary="Run single watcher daemon"
+  )
+  ```
+
+---
+
 ## 2. PERMANENT KAGGLE STORAGE DATASETS
 
 To eliminate slow network downloads, build times, and runtime setup overhead, commonly used heavy assets and binaries are stored permanently on Kaggle:

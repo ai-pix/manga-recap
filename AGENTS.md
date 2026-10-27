@@ -7,9 +7,25 @@ undo it.
 
 > ⚡ **ACTIVE TASK & STATE:** Check [`MEMORY.md`](file:///D:/Python%20Projects/Manga%20Recap/MEMORY.md) for current system architecture, permanent Kaggle storage datasets, and verified render state.
 > 📜 **SCRIPTING INSTRUCTIONS (GOLDEN STANDARD):** When asked to **"look for scripting instruction"** or writing/editing scripts, immediately read and strictly follow [`docs/scripting-instructions.md`](file:///D:/Python%20Projects/Manga%20Recap/docs/scripting-instructions.md). It defines the exact human YouTube recap tone, vocabulary bans, Mercury-3 summary requirement, panel pruning, and 8–14 word clause-to-panel sync rules.
-> 🤖 **MANDATORY STARTUP RULE — GOOGLE SHEET WATCHER & LOW MODE:**
-> 1. **On Every Startup:** Immediately check if the background watcher (`scripts/watch_gemini_daemon.py`) is running. If not running, start it immediately in the background. Check the Google Sheet chat tab for any pending `@Gemini` mentions.
-> 2. **Always Operate in Low Mode:** Always read sheets in low mode (tail window only, e.g. `chat!A70:G120`, never reading the whole sheet). All subagents MUST be launched in low mode (`Model="flash_lite"` or `"flash"`). Keep all chat replies short, direct, and token-efficient.
+> 🤖 **GOOGLE SHEET WATCHER & AGENT COMMUNICATION PROTOCOL:**
+> 1. **Purpose & Reactive Wake-Up:** The watcher (`scripts/watch_gemini_daemon.py`) runs 24/7 in the background consuming zero LLM tokens. It polls the team Google Sheet (`chat` tab) every 15s. When any teammate mentions `@Gemini`, it logs the alert to `scripts/alerts.log` and exits with code `0`. This immediately triggers a reactive wake-up in the Antigravity harness, bringing the agent online instantly without wasting tokens on polling loops.
+> 2. **How to Start Cleanly (Strictly 1 Single Instance):**
+>    ```powershell
+>    .venv\Scripts\python.exe scripts/restart_single_watcher.py
+>    ```
+>    *Or within the agent harness:* Launch via `run_command` with `IsDaemon: true`:
+>    `run_command(CommandLine=".venv\\Scripts\\python.exe scripts/watch_gemini_daemon.py", IsDaemon=True, WaitMsBeforeAsync=500, toolSummary="Run single watcher daemon")`
+>    `restart_single_watcher.py` automatically scans running processes via `psutil`, terminates any stale/duplicate watcher PIDs, removes orphaned lock files (`scripts/watch_gemini.lock`), and starts one clean instance.
+> 3. **How to Stop the Watcher:**
+>    ```powershell
+>    .venv\Scripts\python.exe scripts/kill_watchers.py
+>    ```
+> 4. **Dynamic Sliding Window (Low Mode Invariant):**
+>    - The watcher dynamically reads only the tail window based on `last_seen`: `chat!A{max(2, last_seen-10)}:G{last_seen+50}`.
+>    - `scripts/gemini_watch_state.json` stores `last_seen_id`. As new messages arrive, the window slides forward automatically. **Never hardcode static row ranges (e.g. A70:G120) — they will freeze once the chat grows past them.**
+> 5. **Mandatory Communication Rules:**
+>    - **Always Reply on Mention:** Silence on an `@Gemini` mention is strictly forbidden. Acknowledge every mention immediately.
+>    - **Low Mode Token Policy:** Always read sheets in tail windows (never reading the whole sheet). All subagents MUST be launched in low mode (`Model="flash_lite"` or `"flash"`). Keep all chat replies short, direct, and token-efficient.
 
 ## Run it
 
