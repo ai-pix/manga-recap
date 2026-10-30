@@ -59,6 +59,18 @@ def build_provider(config: Config, role: str) -> LLMProvider:
             pacer=pacer,
         )
 
+    if provider_name == "apinex":
+        from .apinex import ApinexProvider
+
+        return ApinexProvider(
+            api_key=api_key,
+            model=model,
+            max_retries=int(config.get(f"llm.{role}.max_retries", 5)),
+            retry=retry,
+            pacer=pacer,
+            base_url=config.get("llm.apinex_base_url"),
+        )
+
     from .openrouter import OpenRouterProvider
 
     return OpenRouterProvider(

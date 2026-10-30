@@ -4,6 +4,8 @@ import json
 import sys
 from pathlib import Path
 
+sys.stdout.reconfigure(line_buffering=True)
+
 from google_auth_oauthlib.flow import InstalledAppFlow
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -13,6 +15,7 @@ TOKEN_PATH = Path(r"C:\Users\ravih\.config\google-drive-mcp\tokens.json")
 SCOPES = [
     "https://www.googleapis.com/auth/drive",
     "https://www.googleapis.com/auth/drive.file",
+    "https://www.googleapis.com/auth/spreadsheets",
 ]
 
 
@@ -30,16 +33,24 @@ def main():
         scopes=SCOPES,
     )
 
+    class CustomPrompt:
+        def format(self, **kwargs):
+            url = kwargs.get("url", "")
+            (REPO_ROOT / "scripts" / "auth_url.txt").write_text(url, encoding="utf-8")
+            return (
+                "\n" + "=" * 65 + "\n"
+                "PLEASE VISIT THIS URL IN YOUR BROWSER TO AUTHORIZE GOOGLE DRIVE:\n\n"
+                f"{url}\n\n"
+                "=" * 65 + "\n"
+                "Waiting for authorization...\n"
+            )
+
     creds = flow.run_local_server(
         port=8080,
         open_browser=True,
-        authorization_prompt_message=(
-            "\n" + "=" * 65 + "\n"
-            "PLEASE VISIT THIS URL IN YOUR BROWSER TO AUTHORIZE GOOGLE DRIVE:\n\n"
-            "{url}\n\n"
-            "=" * 65 + "\n"
-            "Waiting for authorization...\n"
-        ),
+        access_type="offline",
+        prompt="consent",
+        authorization_prompt_message=CustomPrompt(),
         success_message="Google Drive Authorization successful! You may close this tab.",
     )
 

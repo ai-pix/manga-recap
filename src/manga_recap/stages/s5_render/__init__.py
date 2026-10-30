@@ -41,6 +41,7 @@ def run(
     *,
     force: bool = False,
     kernel_slug: str | None = None,
+    client: KaggleClient | None = None,
 ) -> RenderManifest:
     """Render the chapter and place the final video."""
     if not paths.timeline_file.exists() or not paths.narration_file.exists():
@@ -58,7 +59,8 @@ def run(
 
     if kernel_slug is None:
         kernel_slug = str(config.require("render.kernel_slug"))
-    client = KaggleClient()
+    if client is None:
+        client = KaggleClient()
 
     with timed(f"stage 5 render (Kaggle {kernel_slug})"):
         payload_url = _build_payload(paths, config)
@@ -72,7 +74,7 @@ def run(
                 "id": f"{client.username}/{kernel_slug}",
                 "title": kernel_slug,
                 "enable_gpu": enable_gpu,
-                "dataset_sources": ["wampireai/manga-recap-render-bin"],
+                "dataset_sources": [],
             },
         )
         client.push_kernel(work_dir)

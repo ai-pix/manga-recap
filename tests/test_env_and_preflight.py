@@ -214,7 +214,10 @@ def test_preflight_flags_missing_keys(monkeypatch, set_env):
 
 def test_preflight_passes_with_credentials(set_env):
     config = load_config()
-    set_env({"GEMINI_API_KEY": "test-key-value"})
+    set_env({
+        "GEMINI_API_KEY": "test-key-value",
+        "APINEX_API_KEY": "test-key-value",
+    })
 
     checks = {c.name: c for c in run_checks(config)}
     assert checks["llm.vision"].status == OK
@@ -224,7 +227,10 @@ def test_preflight_passes_with_credentials(set_env):
 
 
 def test_preflight_masks_the_key(set_env):
-    set_env({"GEMINI_API_KEY": "AIzaSyABCDEFGHIJKLMNOP"})
+    set_env({
+        "GEMINI_API_KEY": "AIzaSyABCDEFGHIJKLMNOP",
+        "APINEX_API_KEY": "AIzaSyABCDEFGHIJKLMNOP",
+    })
     checks = {c.name: c for c in run_checks(load_config())}
     detail = checks["llm.vision"].detail
     assert "AIzaSyABCDEFGHIJKLMNOP" not in detail

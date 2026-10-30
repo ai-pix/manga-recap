@@ -6,6 +6,8 @@ recap video. Read this whole file before changing anything. Most of it is
 undo it.
 
 > ⚡ **ACTIVE TASK & STATE:** Check [`MEMORY.md`](file:///D:/Python%20Projects/Manga%20Recap/MEMORY.md) for current system architecture, permanent Kaggle storage datasets, and verified render state.
+> 🎬 **MASTER BATCH RENDERING STANDARD (IMMUTABLE LAW):** Immediately read and strictly follow [`kaggle/MASTER_RENDER_STANDARD.md`](file:///D:/Python%20Projects/Manga%20Recap/kaggle/MASTER_RENDER_STANDARD.md). When 2 Kaggle accounts (4 instances) are available, divide chapters equally into 4 batches (e.g. 5+5+5+5). If only 1 account is available, divide into 2 equal batches (e.g. 10+10). NEVER render single chapters. All batch renders must execute continuously in-memory on Kaggle GPU NVENC (zero reloading/teardown between chapters). 100% pure GPU, zero CPU fallback.
+> 🖼️ **WEBP PANEL STANDARD (IMMUTABLE HARD RULE):** All extracted panels, panel crops, and staged datasets across all pipelines MUST strictly be stored, processed, and uploaded in **WebP format** (`.webp`, quality 90). NEVER store, package, or upload bloated uncompressed raw `.png` files for panels. Any script, pipeline, or agent extracting or packaging panels must convert and store them as WebP to keep archive sizes light (~60–75% smaller).
 > 📜 **SCRIPTING INSTRUCTIONS (GOLDEN STANDARD):** When asked to **"look for scripting instruction"** or writing/editing scripts, immediately read and strictly follow [`docs/scripting-instructions.md`](file:///D:/Python%20Projects/Manga%20Recap/docs/scripting-instructions.md). It defines the exact human YouTube recap tone, vocabulary bans, Mercury-3 summary requirement, panel pruning, and 8–14 word clause-to-panel sync rules.
 > 🤖 **GOOGLE SHEET WATCHER & AGENT COMMUNICATION PROTOCOL:**
 > 1. **Purpose & Reactive Wake-Up:** The watcher (`scripts/watch_gemini_daemon.py`) runs 24/7 in the background consuming zero LLM tokens. It polls the team Google Sheet (`chat` tab) every 15s. When any teammate mentions `@Gemini`, it logs the alert to `scripts/alerts.log` and exits with code `0`. This immediately triggers a reactive wake-up in the Antigravity harness, bringing the agent online instantly without wasting tokens on polling loops.
@@ -69,6 +71,10 @@ Both must be green. They take about 9 seconds combined.
    - Under NO circumstances should any agent invent untested ad-hoc scripts, alternate stitching hacks, or deviate from established, verified pipeline workflows.
    - **Stitching & Movie Compilations:** Always use the proven methodology from `scripts/stitch_all_chapters.py` (`-c:v h264_nvenc`, `-preset p4`, `-cq 28`, `-pix_fmt yuv420p`, `-c:a aac -b:a 128k`, `-movflags +faststart`). NEVER use fragile stream-copy (`-c copy`) for multi-chapter concatenation, as it causes timestamp discontinuities and breaks YouTube video processing.
    - Maintain codebase clarity: reuse existing tools, do not leave confusing one-off scripts, and follow existing architectural standards.
+
+4. **Fish Audio Batch Synthesis Must Run in Multi-Chapter Parallel Concurrency (Never Sequential):**
+   - Never synthesize chapters sequentially one-by-one during batch voiceover runs. Fish Audio cloud API supports high concurrent throughput.
+   - Always dispatch concurrent chapter workers (e.g. 4 to 8 chapters in parallel, each processing blocks concurrently), finishing dozens of chapters in 2–3 minutes total rather than waiting sequentially.
 
 
 ## Where the work is

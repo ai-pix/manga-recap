@@ -107,7 +107,7 @@ def test_shipped_config_is_valid_yaml():
         (REPO_ROOT / "config" / "config.yaml").read_text(encoding="utf-8")
     )
     assert isinstance(data, dict)
-    assert data["llm"]["vision"]["provider"] in ("anthropic", "gemini", "openrouter")
+    assert data["llm"]["vision"]["provider"] in ("anthropic", "gemini", "openrouter", "apinex")
     assert data["crop"]["detector"] in ("yolo", "opencv")
 
 

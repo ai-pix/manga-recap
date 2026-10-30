@@ -18,7 +18,7 @@ from . import env
 from .paths import REPO_ROOT
 
 DEFAULT_CONFIG_PATH = REPO_ROOT / "config" / "config.yaml"
-KNOWN_PROVIDERS = ("anthropic", "gemini", "openrouter")
+KNOWN_PROVIDERS = ("anthropic", "gemini", "openrouter", "apinex")
 
 
 class ConfigError(RuntimeError):
@@ -89,6 +89,8 @@ class Config:
             return ("ANTHROPIC_API_KEY",)
         if provider == "gemini":
             return ("GEMINI_API_KEY", "GOOGLE_API_KEY")
+        if provider == "apinex":
+            return ("APINEX_API_KEY",)
         return ("OPENROUTER_API_KEY",)
 
     def require_api_key(self, provider: str) -> str:

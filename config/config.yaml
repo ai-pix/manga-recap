@@ -22,58 +22,23 @@ paths:
 # ---------------------------------------------------------------------------
 llm:
   vision:
-    provider: gemini
-    # Large context, cheap, and strong at reading dense illustrated pages. The
-    # whole point of `vision` is looking at a grid of panels, so the model has
-    # to cope with a page of noisy line art plus speech bubbles.
-    #
-    # Gemini retired 2.5-flash for new accounts and names 3.8-flash as the
-    # replacement, so an older id here fails with a 404 on the first batch
-    # rather than anything resembling a helpful error.
-    model: gemini-3.5-flash-lite
-    # Panels per API request.
-    #
-    # This is no longer a token-economics dial, it is a request-count dial, and
-    # the number it has to beat is much smaller than it looks. The free tier
-    # reports its real limit in the 429 body as
-    # `GenerateRequestsPerDayPerProjectPerModel-FreeTier`, quotaValue 20: a
-    # free key gets 20 generateContent requests *per day per model*, and the
-    # body says so in a `retryDelay` of hours, not seconds. A 136-panel chapter
-    # at 20 per request is 7 calls before transcription even starts, so a
-    # handful of chapters exhausts the day and the next run is blocked for ten
-    # hours.
-    #
-    # At 200 a whole chapter is one request, and describe plus transcribe is two,
-    # which is the only shape that fits several chapters in a day's allowance.
-    # gemini-3.5-flash accepts 1M input tokens and 64k output, and a chapter of
-    # panels is a few hundred thousand, so the ceiling is the response, not the
-    # prompt. Lower this only if a chapter stops fitting in max_tokens.
-    batch_size: 40
-    # Ceiling on requests per minute, enforced client-side by spacing them out.
-    # Now that a chapter is two requests the daily quota is the binding limit
-    # long before this is, so the value only has to stay high enough not to
-    # trip a 429 on the very first pair of calls. Set to 0 to disable.
-    requests_per_minute: 8
-    # Gemini answers a demand spike with 503, and a 503 that clears in two
-    # minutes is a 503 that retries should outlast. Six attempts with a 5s base
-    # gives about three minutes of ladder, which is what a busy model actually
-    # needs; three attempts over twelve seconds gives up while the queue is
-    # still moving.
+    provider: apinex
+    # Fastest multimodal vision model on Apinex (free/gemini-3.8-flash: ~1.5-2.0s per call).
+    model: free/gemini-3.8-flash
+    # 6 panels per request -> lightweight payload, faster upload, instant model processing
+    batch_size: 6
+    # Max tool calls allowed per minute: Apinex hard rate-limit is 15 RPM.
+    # Set to 14.0 RPM to maximize throughput right at the ceiling with zero 429 errors.
+    requests_per_minute: 14
     max_retries: 6
     temperature: 0.2
-    # One chapter of panel descriptions at batch_size 200 lands in the tens of
-    # thousands of tokens, and the model's ceiling is 64k. Truncating it produces
-    # a JSON body cut off mid-array, which the stage cannot use, so this is set
-    # to the model maximum rather than to something that looks cautious.
-    max_tokens: 65536
+    max_tokens: 16000
 
   script:
-    provider: gemini
-    # The writer reads every panel description for the chapter in a single call,
-    # so it needs a long context. The prose quality of the narrator is the one
-    # thing worth spending a bigger model on: set this to a pro-tier model if
-    # the jokes fall flat.
-    model: gemini-3.5-flash
+    provider: apinex
+    # Kimi-K3 for high IQ showrunner recap scripting
+    model: free/kimi-k3
+    requests_per_minute: 14
     max_retries: 6
     temperature: 0.9
     max_tokens: 16000
@@ -470,7 +435,7 @@ render:
   preset: p1
   test_duration_seconds: 0.0
   max_workers: 4
-  video_bitrate: 3200000
+  video_bitrate: 6000000
   # payload_url: https://your-host/ch01-render.zip
   poll_interval_seconds: 15
   max_wait_seconds: 21600
@@ -548,8 +513,8 @@ sfx:
 # cloning source once the pipeline is proven end to end.
 # ---------------------------------------------------------------------------
 narration:
-  # Tempo multiplier: subtle, natural fast-paced delivery without sounding rushed (1.04x = 4% faster)
-  tempo: 1.04
+  # Tempo multiplier: snappy, high-energy YouTube recap delivery (1.08x = 8% faster)
+  tempo: 1.08
   # Insert a short pause between blocks, in seconds. Natural conversational rhythm.
   block_gap_seconds: 0.12
   # Normalise narration loudness to this LUFS before mixing.

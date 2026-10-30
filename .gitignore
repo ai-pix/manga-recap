@@ -88,6 +88,10 @@ htmlcov/
 # --- Temporary & Scratch Output Files ---
 all_blocks_comparison.txt
 *.log
+scripts/*.json
+scripts/*.txt
+scripts/*.lock
+scripts/alerts.log
 
 # --- OS & IDE Metadata ---
 .vscode/

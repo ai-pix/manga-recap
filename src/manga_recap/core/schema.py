@@ -14,7 +14,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-PanelSource = Literal["yolo", "opencv", "manual"]
+PanelSource = Literal["yolo", "opencv", "manual", "manhwa"]
 
 _WORDS_RE = re.compile(r"[a-z0-9']+")
 

@@ -27,10 +27,21 @@ from ...core.config import Config
 from ...core.logging import get_logger, timed, write_stage_status
 from ...core.paths import ChapterPaths, repo_path
 from ...core.schema import PanelIndexFile, save_model
+from .manhwa_slicer import ContinuousCanvas, ManhwaSliceConfig, ManhwaSlicer, slice_manhwa
 
 _log = get_logger("stages.s1_crop")
 
 INDEX_FILENAME = "panel_index.json"
+
+__all__ = [
+    "INDEX_FILENAME",
+    "ContinuousCanvas",
+    "ManhwaSliceConfig",
+    "ManhwaSlicer",
+    "load_index",
+    "run",
+    "slice_manhwa",
+]
 
 
 def run(

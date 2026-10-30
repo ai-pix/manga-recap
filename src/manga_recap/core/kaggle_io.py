@@ -165,7 +165,9 @@ class KaggleClient:
     def __init__(
         self,
         username: str | None = None,
+        key: str | None = None,
         *,
+        config_dir: Path | str | None = None,
         executable: str | None = None,
         dry_run: bool = False,
     ) -> None:
@@ -173,6 +175,8 @@ class KaggleClient:
         self.dry_run = dry_run
         self._log = get_logger("kaggle")
         self.username = username or ensure_kaggle_credentials()
+        self.key = key
+        self.config_dir = Path(config_dir) if config_dir else None
 
     # -- low level --------------------------------------------------------
 
@@ -192,6 +196,15 @@ class KaggleClient:
         env = os.environ.copy()
         env["PYTHONIOENCODING"] = "utf-8"
         env["PYTHONUTF8"] = "1"
+        if self.config_dir:
+            env["KAGGLE_CONFIG_DIR"] = str(self.config_dir.resolve())
+        if self.username:
+            env["KAGGLE_USERNAME"] = self.username
+        if self.key:
+            if self.key.startswith("KGAT_"):
+                env["KAGGLE_API_TOKEN"] = self.key
+            else:
+                env["KAGGLE_KEY"] = self.key
         try:
             result = subprocess.run(
                 command,

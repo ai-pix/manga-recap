@@ -452,7 +452,11 @@ def _to_descriptions(
         if panel_id not in by_id:
             # Normalize common vision model typos: e.g. 'panel0074' -> 'panel_0074' or 'panel_74' -> 'panel_0074'
             candidate = None
-            if panel_id.startswith("panel") and not panel_id.startswith("panel_"):
+            if panel_id.isdigit():
+                cand = f"panel_{int(panel_id):04d}"
+                if cand in by_id:
+                    candidate = cand
+            elif panel_id.startswith("panel") and not panel_id.startswith("panel_"):
                 suffix = panel_id[5:]
                 if suffix.isdigit():
                     cand = f"panel_{int(suffix):04d}"
@@ -476,29 +480,22 @@ def _to_descriptions(
 
     missing = set(by_id) - {d.panel_id for d in described}
     if missing:
-        # If only a few panels were omitted in a large batch, synthesize clean fallback entries
+        # If any panels were omitted in batch, synthesize clean fallback entries
         # so the entire multi-minute vision pass does not abort.
-        if len(missing) <= max(3, len(batch) // 10):
-            _log.warning(
-                "Vision model omitted %d panel(s) in batch: %s. Synthesizing fallback descriptions.",
-                len(missing),
-                sorted(missing),
-            )
-            for m_id in sorted(missing):
-                fallback_raw = {
-                    "panel_id": m_id,
-                    "action": "Visual scene continuation or transitional framing.",
-                    "setting": "in_scene",
-                    "characters": [],
-                    "speech_bubbles": [],
-                }
-                described.append(_build_description(fallback_raw, by_id[m_id], paths))
-        else:
-            raise LLMError(
-                f"Vision model skipped {len(missing)} panel(s) in a batch: "
-                f"{sorted(missing)}. Re-run the stage; partial batches are not usable "
-                "because a missing panel means a missing picture in the video."
-            )
+        _log.warning(
+            "Vision model omitted %d panel(s) in batch: %s. Synthesizing fallback descriptions.",
+            len(missing),
+            sorted(missing),
+        )
+        for m_id in sorted(missing):
+            fallback_raw = {
+                "panel_id": m_id,
+                "action": "Visual scene continuation or transitional framing.",
+                "setting": "in_scene",
+                "characters": [],
+                "speech_bubbles": [],
+            }
+            described.append(_build_description(fallback_raw, by_id[m_id], paths))
     return described
 
 

@@ -123,10 +123,28 @@ def run_stitch(
 def main():
     parser = argparse.ArgumentParser(description="Stitch recap chapters into single video")
     parser.add_argument(
+        "--prefix",
+        type=str,
+        default="series3_ch",
+        help="Chapter folder prefix (default: series3_ch)",
+    )
+    parser.add_argument(
+        "--start",
+        type=int,
+        default=1,
+        help="Start chapter number (default: 1)",
+    )
+    parser.add_argument(
+        "--end",
+        type=int,
+        default=30,
+        help="End chapter number (default: 30)",
+    )
+    parser.add_argument(
         "--output",
         "-o",
         type=Path,
-        default=Path("data/chapters/barbarian_movie_ch01_ch20.mp4"),
+        default=Path("data/chapters/tomb_raider_king_movie_ch01_ch30.mp4"),
         help="Path for output stitched video",
     )
     parser.add_argument(
@@ -144,7 +162,8 @@ def main():
     )
     args = parser.parse_args()
 
-    run_stitch(CHAPTERS, args.output, codec=args.codec, cq=args.cq)
+    chapters = [f"{args.prefix}{i:02d}" for i in range(args.start, args.end + 1)]
+    run_stitch(chapters, args.output, codec=args.codec, cq=args.cq)
 
 
 if __name__ == "__main__":

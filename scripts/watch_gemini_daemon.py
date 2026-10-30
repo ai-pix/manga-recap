@@ -2,7 +2,9 @@
 
 Zero LLM tokens while idling.
 Polls every 15s.
-Exits immediately upon detecting a new @Gemini mention to trigger reactive agent wake-up.
+Tracks strictly ascending sheet row numbers so blank or out-of-order IDs never cause duplicate alerts.
+Filters out courtesy pass-through tags (e.g., '@Gemini @Foxy @Aria — no action on this message').
+Exits immediately upon detecting a genuine @Gemini mention to trigger reactive agent wake-up.
 """
 
 import json
@@ -10,6 +12,12 @@ import time
 import sys
 import requests
 from pathlib import Path
+
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
 
 SHEET_ID = "1sHI3qIU9y6Aiznfo9_d8Ari8Bu0WWqW6UHzNhsSnfxA"
 SECRET_PATH = Path(r"C:\Users\ravih\Downloads\client_secret_532039068995-k60ntg8pgpnr1nn04asb31r8q9uisp78.apps.googleusercontent.com.json")
@@ -32,20 +40,30 @@ def get_access_token():
     }, timeout=15)
     return resp.json()["access_token"]
 
-def load_last_seen():
+def load_last_seen_row():
     if STATE_FILE.exists():
         try:
-            return json.loads(STATE_FILE.read_text()).get("last_seen_id", 80)
+            data = json.loads(STATE_FILE.read_text())
+            return data.get("last_seen_row") or data.get("last_seen_id", 517)
         except Exception:
             pass
-    return 80
+    return 517
 
-def save_last_seen(msg_id):
-    STATE_FILE.write_text(json.dumps({"last_seen_id": msg_id}))
+def save_last_seen_row(row_idx):
+    STATE_FILE.write_text(json.dumps({"last_seen_row": row_idx}))
+
+def is_actionable_gemini_mention(message: str) -> bool:
+    """Return True only if @Gemini is mentioned outside of courtesy 'no action' lines."""
+    for line in message.splitlines():
+        if "@gemini" in line.lower():
+            if "no action" in line.lower():
+                continue
+            return True
+    return False
 
 def poll_for_mentions():
-    last_seen = load_last_seen()
-    print(f"Watcher started for @Gemini. Baseline message ID: {last_seen}. Polling every 15s...", flush=True)
+    last_seen_row = load_last_seen_row()
+    print(f"Watcher started for @Gemini. Baseline row: {last_seen_row}. Polling every 15s...", flush=True)
 
     token = None
     token_time = 0
@@ -58,21 +76,18 @@ def poll_for_mentions():
                 token_time = time.time()
 
             headers = {"Authorization": f"Bearer {token}"}
-            # Dynamic tail window based on last_seen to strictly obey Low Mode while never getting left behind
-            start_row = max(2, last_seen - 10)
-            end_row = last_seen + 50
+            # Sliding tail window based on last_seen_row
+            start_row = max(2, last_seen_row - 2)
+            end_row = last_seen_row + 50
             url = f"https://sheets.googleapis.com/v4/spreadsheets/{SHEET_ID}/values/chat!A{start_row}:G{end_row}"
             resp = requests.get(url, headers=headers, timeout=15)
             
             if resp.status_code == 200:
                 values = resp.json().get("values", [])
-                for row in values:
+                for offset, row in enumerate(values):
+                    current_row = start_row + offset
                     while len(row) < 7:
                         row.append("")
-                    try:
-                        msg_id = int(row[0].strip())
-                    except ValueError:
-                        continue
                     
                     author = row[2].strip()
                     message = row[3].strip()
@@ -80,13 +95,14 @@ def poll_for_mentions():
                     if not author and not message:
                         continue
                     
-                    if msg_id > last_seen:
-                        last_seen = max(last_seen, msg_id)
-                        save_last_seen(last_seen)
+                    if current_row > last_seen_row:
+                        last_seen_row = current_row
+                        save_last_seen_row(last_seen_row)
                         
-                        # Check for @Gemini mention (excluding self)
-                        if "@gemini" in message.lower() and author.lower() != "gemini":
-                            alert_line = f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] PING! @Gemini mentioned by {author} (msg #{msg_id}): {message}\n"
+                        # Check for actionable @Gemini mention (excluding self)
+                        if author.lower() != "gemini" and is_actionable_gemini_mention(message):
+                            msg_id = row[0].strip() or f"row-{current_row}"
+                            alert_line = f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] PING! @Gemini mentioned by {author} (msg #{msg_id}, row {current_row}): {message}\n"
                             print(f"\n{'!'*60}\n{alert_line.strip()}\n{'!'*60}", flush=True)
                             with open(ALERTS_LOG, "a", encoding="utf-8") as af:
                                 af.write(alert_line)

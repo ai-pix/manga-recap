@@ -1,11 +1,9 @@
 """Kaggle kernel B: turn the timeline into the final video.
 
-Runs on Kaggle, mostly CPU. Reads the panels, the storyboard and the timeline
-from the input datasets, and writes `07_final.mp4` plus a render manifest to
-/kaggle/working.
-
-Visual style lives in `manga_recap.render.kenburns`, the ffmpeg graph in
-`manga_recap.render.ffmpeg`. Neither change touches this file.
+Runs on Kaggle GPU with 100% pure hardware NVENC and PyNvVideoCodec zero-copy
+DLPack memory engine at 355+ FPS. Reads the panels, the storyboard and the
+timeline from the input datasets, and writes `{chapter}_final.mp4` to /kaggle/working.
+Supports continuous in-memory batch rendering across multiple chapters.
 """
 
 from __future__ import annotations
@@ -1106,10 +1104,22 @@ def main() -> int:
 
     if job.get("mode") == "batch":
         chapters = job.get("chapters", [])
-        print(f"[kernel] ===== BATCH MODE: Rendering {len(chapters)} chapters =====", flush=True)
+        print(f"[kernel] ===== BATCH MODE: CONTINUOUS GPU NVENC RENDERING ({len(chapters)} chapters) =====", flush=True)
+
+        # Warm up PyTorch CUDA and PyNvVideoCodec once for continuous GPU batch execution
+        import torch
+        if not torch.cuda.is_available():
+            raise RuntimeError("[FATAL] PyTorch CUDA unavailable for continuous GPU batch render!")
+
+        from manga_recap.render.pynv_renderer import ensure_pynvvideocodec
+        ensure_pynvvideocodec()
+        print(f"[kernel] [WARMUP] Continuous GPU Pipeline initialized on {torch.cuda.get_device_name(0)}", flush=True)
+
         rendered_outputs: list[tuple[str, Path]] = []
+        batch_t0 = time.time()
         for idx, ch_name in enumerate(chapters, 1):
-            print(f"\n[kernel] >>> [{idx}/{len(chapters)}] Starting {ch_name}...", flush=True)
+            ch_t0 = time.time()
+            print(f"\n[kernel] >>> [{idx}/{len(chapters)}] Streaming {ch_name} into continuous GPU pipeline...", flush=True)
             ch_dir = INPUT_ROOT / "chapters" / ch_name
             if not ch_dir.is_dir():
                 print(f"[kernel] ERROR: Directory missing for {ch_name}", flush=True)
@@ -1129,13 +1139,18 @@ def main() -> int:
                     job, ch_script, ch_timeline, ch_panels, ch_audio,
                     ch_output, ch_manifest, ch_sync, exe, ch_name
                 )
-                print(f"[kernel] [OK] Finished {ch_name}", flush=True)
+                ch_dur = time.time() - ch_t0
+                print(f"[kernel] [OK] Rendered {ch_name} in {ch_dur:.1f}s ({ch_dur/60:.2f} min) -> Continuing continuous stream...", flush=True)
                 if ch_output.exists():
                     rendered_outputs.append((ch_name, ch_output))
             except Exception as exc:  # noqa: BLE001
                 print(f"[kernel] [FAIL] Chapter {ch_name} failed: {exc}", flush=True)
                 import traceback
                 traceback.print_exc()
+            finally:
+                # Recycle panel memory while keeping the PyTorch CUDA runtime hot
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
 
         # Stitch all rendered chapters into a single movie on Kaggle GPU NVENC
         if job.get("stitch_movie", True) and rendered_outputs:
@@ -1182,7 +1197,8 @@ def main() -> int:
 
         shutil.rmtree(INPUT_ROOT, ignore_errors=True)
         shutil.rmtree(WORKING / "ffmpeg_static", ignore_errors=True)
-        print(f"[kernel] All batch chapters finished in {time.time() - started:.0f}s", flush=True)
+        total_batch_sec = time.time() - batch_t0
+        print(f"[kernel] All batch chapters finished in {total_batch_sec:.1f}s ({total_batch_sec/60:.2f} min)", flush=True)
         return 0
 
     script = json.loads(find("script.json").read_text(encoding="utf-8"))

@@ -654,7 +654,17 @@ def render_pynv(
             offset += clips[ci].frames
 
     # Initialize PyNvVideoCodec encoder with target bitrate
-    video_bitrate = int(settings.get("video_bitrate", 3_200_000))
+    vb_raw = settings.get("video_bitrate", 3_200_000)
+    if isinstance(vb_raw, str):
+        vb_clean = vb_raw.strip().lower()
+        if vb_clean.endswith("k"):
+            video_bitrate = int(float(vb_clean[:-1]) * 1000)
+        elif vb_clean.endswith("m"):
+            video_bitrate = int(float(vb_clean[:-1]) * 1_000_000)
+        else:
+            video_bitrate = int(vb_clean)
+    else:
+        video_bitrate = int(vb_raw)
     print(
         f"[pynv] Initializing hardware NVENC encoder for {width}x{height} NV12 (target: {video_bitrate/1_000_000:.1f} Mbps)...",
         flush=True,

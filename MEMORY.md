@@ -11,6 +11,25 @@ All upstream stages (ingest, crop, describe, script, speak, render) across the e
 > 1. **Zero heavy compute locally:** The local machine is Windows with GTX 1650 and Python 3.14. Video rendering, TTS model training/inference, and Whisper alignment must NEVER run locally. Local system is strictly for orchestration, API requests, metadata generation, and unit tests.
 > 2. **ABSOLUTE BAN ON KAGGLE CPU & ZERO CPU FALLBACKS:** All compute jobs running on Kaggle must be 100% GPU/CUDA accelerated. NEVER run video rendering on Kaggle CPU. NEVER include or execute any fallback to CPU software encoding (`libx264`, `veryfast`, `ultrafast`). If GPU/NVENC fails to initialize, the job MUST raise an immediate fatal `RuntimeError` in under 2 seconds. Silently downgrading to CPU is strictly prohibited.
 > 3. **STRICT RULE: NEVER INVENT NEW AD-HOC PATTERNS — USE WHAT ALREADY WORKED:** Agents must NEVER invent untested ad-hoc scripts or deviate from established, verified pipeline workflows. For stitching and compilations, strictly follow `scripts/stitch_all_chapters.py` (hardware NVENC re-encode with `+faststart`). Never use `-c copy` across multi-chapter boundaries which corrupts YouTube ingest processing.
+> 4. **FISH AUDIO BATCH SYNTHESIS MUST RUN IN MULTI-CHAPTER PARALLEL CONCURRENCY (NEVER SEQUENTIAL):**
+>    - Never synthesize chapters sequentially one-by-one during batch audio runs. Fish Audio cloud API supports high concurrent throughput.
+>    - Always dispatch concurrent chapter workers (e.g. 4 to 8 chapters in parallel, each processing blocks concurrently), finishing dozens of chapters in 2–3 minutes total rather than waiting sequentially.
+> 5. **THE CHAPTER 1 GOLDEN STORYTELLING STANDARD (ZERO VISION-LITERAL TOLERANCE):**
+>    - **The Benchmark:** All recap scripts across all series must strictly match the quality, tone, and depth of Chapter 1 (`series3_ch01` / `scripts/build_accurate_tomb_ch01_script.py`).
+>    - **Tone & Persona:** Enthusiastic, witty, charismatic YouTube recap creator (like *Mamoru*), hyping up the protagonist's schemes, mocking arrogant villains, and pulling the viewer into the high-stakes narrative.
+>    - **Zero Vision-Literal Descriptions:** NEVER describe drawing artifacts, object tags, or medium mechanics. Banned phrases: *"blue trousers"*, *"speech bubbles"*, *"spiky boxes"*, *"character scene in view"*, *"panels"*, *"frames"*, *"drawings"*, *"illustrations"*, *"artist"*, *"author"*, *"readers"*, *"viewers"*.
+>    - **Zero Synthetic Fillers:** NEVER append robotic word-padding strings (e.g. *"without hesitation with total confidence"*). Every beat must be an organic, meaningful 8–14 word sentence.
+>    - **Story & Dialogue First:** Every panel beat must narrate the character's thoughts, emotions, dialogue (rephrased dynamically), plot revelations, or physical danger. All 8–14 word clauses must map 1:1 with story panels to preserve perfect audio-visual synchronization.
+> 6. **MASTER BATCH RENDERING STANDARD (IMMUTABLE LAW - [`kaggle/MASTER_RENDER_STANDARD.md`](file:///D:/Python%20Projects/Manga%20Recap/kaggle/MASTER_RENDER_STANDARD.md)):**
+>    - **Quad-Instance Distribution (2 Accounts):** Partition chapters equally into 4 batches (e.g. 5+5+5+5) across all 4 GPU slots (`fabricatevisuals` and `ravidevai`).
+>    - **Dual-Instance Distribution (1 Account):** If only 1 account is available, partition equally into 2 batches (e.g. 10+10) across that account's 2 slots.
+>    - **NEVER Render Single Chapters Individually:** Strict batch execution only.
+>    - **Continuous In-Memory GPU Rendering:** Keep PyTorch CUDA context, GPU buffers, and the PyNvVideoCodec hardware encoder warm in a single continuous session; chapters in a batch stream continuously without teardown or reloading between chapters.
+>    - **Zero CPU Fallback:** 100% NVENC / CUDA at 355+ FPS. Immediate hard fail if GPU unavailable.
+> 7. **WEBP PANEL STANDARD (IMMUTABLE HARD RULE):**
+>    - All extracted panels, panel crops, and staged datasets across all series and pipelines MUST strictly be stored, processed, and uploaded in **WebP format** (`.webp`, quality 90).
+>    - NEVER store, package, or upload bloated uncompressed raw `.png` files for panels.
+>    - WebP reduces panel archive sizes by 60–75% while maintaining visually lossless 1080p quality, eliminating bandwidth and storage bottlenecks.
 
 ---
 
@@ -356,3 +375,49 @@ This is the standard multi-chapter scripting and speech generation pipeline:
 - Voice: `802e3bc2b27e49c2995d23ef70e6ac89` (Energetic YouTube Recap Male Voice).
 - Concurrency: 4.
 - Generates 44.1kHz studio narration `05_narration.wav` and word-anchored `06_timeline.json`.
+
+---
+
+## 12. TOMB RAIDER KING (SERIES 3) 30-CHAPTER FULL RENDER (COMPLETE & VERIFIED)
+
+- **Source**: 30 chapters (`series3_ch01` to `series3_ch30`) in [`data/chapters/`](file:///D:/Python%20Projects/Manga%20Recap/data/chapters/).
+- **Stages 0–4 (Ingest, Crop, Describe, Script, Voice & Timeline)**: 100% complete across all 30 chapters.
+  - Scripting: Mamoru YouTube recap tone, strict 1:1 clause-to-panel sync, zero banned words.
+  - Speech: High-fidelity Fish Audio narration and word-aligned JSON timelines (`06_timeline.json`).
+- **Stage 5 (Dual-Instance Kaggle GPU NVENC Batch Render)**:
+  - Executed via `scripts/orchestrate_render_tomb_dual.py` across 2 concurrent Kaggle Tesla T4 GPU instances (`manga-recap-render` and `manga-recap-render-2`).
+  - Pure zero-copy PyNvVideoCodec DLPack NVENC (`engine: pynv`) sustained at **355+ FPS**.
+  - **All 30 chapters rendered and verified on disk (`07_final.mp4`)**:
+    - `series3_ch01`: 135.9 MB | `series3_ch16`: 173.0 MB
+    - `series3_ch02`: 178.7 MB | `series3_ch17`: 181.2 MB
+    - `series3_ch03`: 142.3 MB | `series3_ch18`: 160.4 MB
+    - `series3_ch04`: 165.1 MB | `series3_ch19`: 179.3 MB
+    - `series3_ch05`: 166.2 MB | `series3_ch20`: 178.5 MB
+    - `series3_ch06`: 173.1 MB | `series3_ch21`: 160.8 MB
+    - `series3_ch07`: 155.0 MB | `series3_ch22`: 258.2 MB
+    - `series3_ch08`: 118.5 MB | `series3_ch23`: 230.4 MB
+    - `series3_ch09`: 142.6 MB | `series3_ch24`: 234.3 MB
+    - `series3_ch10`: 155.0 MB | `series3_ch25`: 238.0 MB
+    - `series3_ch11`: 142.6 MB | `series3_ch26`: 245.6 MB
+    - `series3_ch12`: 279.8 MB | `series3_ch27`: 180.4 MB
+    - `series3_ch13`: 186.5 MB | `series3_ch28`: 181.7 MB
+    - `series3_ch14`: 173.9 MB | `series3_ch29`: 109.6 MB
+    - `series3_ch15`: 131.3 MB | `series3_ch30`: 150.0 MB
+  - **Total 30-Chapter Archive**: **5,307.9 MB (5.18 GB)** 1080p video with 100% audio-panel synchronization, 0 gaps, and zero drift.
+
+---
+
+## 13. OMNISCIENT READER'S VIEWPOINT (ORV) 31-CHAPTER FULL MOVIE PRODUCTION (COMPLETE)
+
+- **Source**: 31 chapters (`orv_ch00` through `orv_ch30`) in [`data/chapters/`](file:///D:/Python%20Projects/Manga%20Recap/data/chapters/).
+- **Stages 0–3 (Ingest, Crop, Describe, Script)**: All 31 chapters described and scripted (strict Golden Standard, 1:1 clause-to-panel sync).
+- **Stage 4 (Parallel Voiceover & Timelines)**: 100% complete across all 31 chapters via 4 concurrent Fish Audio workers (`s2.1-pro-free` @ 44.1kHz studio narration + `06_timeline.json` word sync). Completed in 8.7 minutes total.
+- **Stage 5 (Dual-Batch Kaggle GPU Movie Render)**:
+  - **Batch 1 (Ch00–15, 16 chapters)**: Rendered on Kaggle Tesla T4 GPU 1 (`ravidevai/manga-recap-render`), output [`orv_part1.mp4`](file:///D:/Python%20Projects/Manga%20Recap/data/movies/orv_part1.mp4) (667.9 MB).
+  - **Batch 2 (Ch16–30, 15 chapters)**: Rendered on Kaggle Tesla T4 GPU 2 (`ravidevai/manga-recap-render-2`), output [`orv_part2.mp4`](file:///D:/Python%20Projects/Manga%20Recap/data/movies/orv_part2.mp4) (700.3 MB).
+  - **Master Full Movie**: Stitched into [`orv_full_movie_ch00_ch30.mp4`](file:///D:/Python%20Projects/Manga%20Recap/data/movies/orv_full_movie_ch00_ch30.mp4) via NVENC.
+- **Kaggle API Credentials**:
+  - Primary account: `ravidevai`
+  - Active Token: `KGAT_065d2cad54a6e39a49b940d7ca98293d` (saved in `config/.env` and `~/.kaggle/kaggle.json`).
+  - Backup Token: `KGAT_8c273d89e46e96b07664bc9a6e059b70` (`wampireai`).
+

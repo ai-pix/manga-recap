@@ -97,7 +97,22 @@ def stage_artifact_exists(stage: Stage, paths: ChapterPaths) -> bool:
     if stage.produces.endswith("/"):
         target = paths.root / stage.produces.rstrip("/")
         return target.exists() and any(target.iterdir())
-    return (paths.root / stage.produces).exists()
+    target = paths.root / stage.produces
+    if not target.exists():
+        return False
+    if stage.name == "s2_describe":
+        try:
+            import json
+            idx_file = paths.panel_index_file
+            if idx_file.exists():
+                idx_data = json.loads(idx_file.read_text(encoding="utf-8"))
+                desc_data = json.loads(target.read_text(encoding="utf-8"))
+                idx_cnt = len(idx_data.get("panels", []))
+                desc_cnt = len(desc_data.get("panels", []))
+                return desc_cnt >= idx_cnt and desc_cnt > 0
+        except Exception:
+            return False
+    return True
 
 
 def run_pipeline(
