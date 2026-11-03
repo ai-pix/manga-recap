@@ -14,6 +14,7 @@ import time
 
 from ...core.config import Config
 from ...core.logging import get_logger, timed, write_stage_status
+from ...core.panelcontent import clean_descriptions, rebind_skippable_panels
 from ...core.paths import ChapterPaths, repo_path
 from ...core.schema import (
     DescriptionFile,
@@ -47,6 +48,10 @@ def run(
         return load_model(paths.script_file, ScriptFile)
 
     with timed("stage 3 script"):
+        descriptions, pruned = clean_descriptions(descriptions, paths.chapter_dir, config)
+        if pruned > 0:
+            _log.info("Stage 3: cleaned and migrated dialogue for %d text/void panels", pruned)
+            save_model(descriptions, paths.descriptions_file)
         payload = _build_payload(paths, descriptions, config)
         prompt = _load_prompt("config/prompts/storyboard.md")
 
@@ -65,6 +70,9 @@ def run(
         )
 
         script = _to_script(response, paths, descriptions, config)
+        script, rebound = rebind_skippable_panels(script, descriptions, config)
+        if rebound > 0:
+            _log.info("Stage 3: rebound %d skippable/text panels to closest visual art panels", rebound)
         report = validate(script, descriptions, config)
 
         if not report.ok:
@@ -110,15 +118,18 @@ def _build_payload(
     """
     skippable = {str(x).lower() for x in config.get("script.skippable_panel_labels", [])}
     ordered = descriptions.ordered()
+    story_panels = [p for p in ordered if not p.is_skippable(skippable)]
+    if not story_panels:
+        story_panels = ordered
 
     return {
         "series_bible": _load_series_bible(config, paths.chapter_id),
         "chapter_title": descriptions.title or f"Chapter for {paths.chapter_id}",
-        "known_characters": _known_characters(ordered),
-        "panel_count": len(ordered),
-        "panel_lines": [p.to_context_line() for p in ordered],
+        "known_characters": _known_characters(story_panels),
+        "panel_count": len(story_panels),
+        "panel_lines": [p.to_context_line() for p in story_panels],
         "target_words": int(config.get("script.target_words", 4000)),
-        "coverage_requirements": _coverage_note(ordered, skippable),
+        "coverage_requirements": _coverage_note(story_panels, skippable),
     }
 
 
@@ -266,6 +277,7 @@ def _repair(
         return script
 
     repaired = _to_script(response, paths, descriptions, config)
+    repaired, _ = rebind_skippable_panels(repaired, descriptions, config)
     new_report = validate(repaired, descriptions, config)
     if new_report.ok:
         _log.info("Stage 3: repair pass fixed the script")

@@ -62,6 +62,10 @@ build/
 dist/
 .dropbox/
 .kilo/
+aria_extracted/
+manga_dubs/
+concat_list.txt
+*.00[1-9]
 
 # Keep directory scaffolding with .gitkeep
 !data/.gitkeep

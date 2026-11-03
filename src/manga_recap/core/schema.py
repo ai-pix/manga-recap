@@ -236,6 +236,7 @@ class PanelDescription(BaseModel):
     is_sfx_only: bool = False
     is_color_splash: bool = False
     is_credits_or_ad: bool = False
+    is_text_only: bool = False
     # True when stage 1 found text regions on this panel. Carried here so the
     # script gate can tell a genuinely wordless panel from a failed read.
     has_detected_text: bool = False
@@ -260,11 +261,29 @@ class PanelDescription(BaseModel):
         """
         return self.has_detected_text and not self.speech_bubbles and not self.sfx_text
 
-    def is_skippable(self, skippable_labels: set[str]) -> bool:
-        """True when a panel is chrome (credits, an ad) rather than story."""
-        if self.is_credits_or_ad:
+    def is_skippable(self, skippable_labels: set[str] | None = None) -> bool:
+        """True when a panel is chrome (credits, an ad, or text-only void) rather than story."""
+        if self.is_credits_or_ad or self.is_text_only or self.is_sfx_only:
             return True
-        return self.setting.strip().lower() in skippable_labels
+        labels = {lbl.strip().lower() for lbl in (skippable_labels or set())}
+        setg = self.setting.strip().lower()
+        if setg in labels:
+            return True
+        if any(lbl in setg for lbl in labels if len(lbl) > 2):
+            return True
+        if not self.characters:
+            act = self.action.strip().lower()
+            text_void_cues = (
+                "text-only", "text card", "caption box", "caption boxes",
+                "black screen", "black background", "white background",
+                "black void", "white void", "dark void", "blank white",
+                "pure black", "article text", "status bar", "system window",
+                "notification window", "title page", "title card", "no artwork",
+                "no character or drawn scene", "recruitment", "discord",
+            )
+            if any(cue in setg or cue in act for cue in text_void_cues):
+                return True
+        return False
 
     def to_context_line(self) -> str:
         """Compact single-line rendering for the script prompt.

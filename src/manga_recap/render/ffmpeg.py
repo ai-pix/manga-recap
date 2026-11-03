@@ -129,7 +129,9 @@ def build_clips(
 
     clips: list[Clip] = []
     for shot in shots:
-        path = panels_dir / f"{shot.panel_id}.png"
+        path = panels_dir / f"{shot.panel_id}.webp"
+        if not path.exists():
+            path = panels_dir / f"{shot.panel_id}.png"
         if not path.exists():
             path = panels_dir / f"{shot.panel_id}.jpg"
         if not path.exists():

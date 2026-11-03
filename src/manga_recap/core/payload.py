@@ -108,25 +108,39 @@ def _upload_filebin(archive: Path, name: str, host: str, timeout: float) -> str:
 
 
 def _upload_sendit(archive: Path, name: str, host: str, timeout: float) -> str:
-    """Upload to sendit.sh via HTTP PUT."""
+    """Upload to sendit.sh via HTTP PUT with retry."""
     import re
+    import time
 
     clean_host = host.rstrip("/")
     clean_name = name.strip("/")
     url_target = f"{clean_host}/{clean_name}"
-    with archive.open("rb") as handle:
-        response = httpx.put(
-            url_target,
-            content=handle.read(),
-            timeout=timeout,
-        )
-    response.raise_for_status()
-    match = re.search(r"https://sendit\.sh/[a-zA-Z0-9_\-]+/[^\s]+", response.text)
-    if not match:
-        raise RuntimeError(f"sendit.sh returned unexpected response: {response.text[:200]!r}")
-    url = match.group(0).strip()
-    _log.info("Payload uploaded: %s", url)
-    return url
+    timeout_obj = httpx.Timeout(timeout=max(timeout, 900.0), connect=60.0, read=900.0, write=900.0)
+    attempts = 3
+    last_err: Exception | None = None
+
+    for attempt in range(1, attempts + 1):
+        try:
+            with archive.open("rb") as handle:
+                response = httpx.put(
+                    url_target,
+                    content=handle.read(),
+                    timeout=timeout_obj,
+                )
+            response.raise_for_status()
+            match = re.search(r"https://sendit\.sh/[a-zA-Z0-9_\-]+/[^\s]+", response.text)
+            if not match:
+                raise RuntimeError(f"sendit.sh returned unexpected response: {response.text[:200]!r}")
+            url = match.group(0).strip()
+            _log.info("Payload uploaded: %s", url)
+            return url
+        except Exception as exc:  # noqa: BLE001
+            last_err = exc
+            _log.warning("sendit.sh upload attempt %d/%d failed: %s", attempt, attempts, exc)
+            if attempt < attempts:
+                time.sleep(3 * attempt)
+
+    raise RuntimeError(f"sendit.sh upload failed after {attempts} attempts: {last_err}")
 
 
 def _upload_catbox(archive: Path, name: str, host: str, timeout: float) -> str:

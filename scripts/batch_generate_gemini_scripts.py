@@ -21,6 +21,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from manga_recap.core.config import load_config
+from manga_recap.core.panelcontent import clean_descriptions, rebind_skippable_panels
 from manga_recap.core.schema import DescriptionFile, ScriptFile, load_model, save_model
 from manga_recap.stages.s3_script.validate import validate
 
@@ -112,8 +113,9 @@ def generate_script_for_chapter(ch_num: int, force: bool = False) -> bool:
             next_lines = next_summary_path.read_text(encoding="utf-8").splitlines()
             next_hook = "\n".join(next_lines[:12])  # Opening of next chapter
 
-    # Build active panel sequence
-    active_panels = [p for p in desc_file.panels if not p.is_credits_or_ad]
+    # Clean descriptions and build active pure art panel sequence
+    desc_file, _ = clean_descriptions(desc_file, ch_dir)
+    active_panels = [p for p in desc_file.panels if not p.is_skippable()]
     panel_contexts = []
     for p in active_panels:
         who = ", ".join(p.characters) if p.characters else "nobody"
@@ -205,6 +207,9 @@ Output strictly valid JSON.
     parsed["created_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
 
     script_obj = ScriptFile.model_validate(parsed)
+    script_obj, rebound_cnt = rebind_skippable_panels(script_obj, desc_file)
+    if rebound_cnt > 0:
+        print(f" [rebound {rebound_cnt} text panels]", end="")
     save_model(script_obj, script_path)
     print(f" Done in {elapsed:.1f}s ({len(script_obj.blocks)} blocks, {script_obj.total_words} words) -> {script_path.name}")
 

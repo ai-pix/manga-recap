@@ -6,6 +6,14 @@ recap video. Read this whole file before changing anything. Most of it is
 undo it.
 
 > ⚡ **ACTIVE TASK & STATE:** Check [`MEMORY.md`](file:///D:/Python%20Projects/Manga%20Recap/MEMORY.md) for current system architecture, permanent Kaggle storage datasets, and verified render state.
+> 🚫 **STRICT ORDER: ZERO SHORTCUTS EVER & MANDATORY WORKFLOW ADHERENCE (STRICT ORDER):** Under NO circumstances should any agent take shortcuts, fake reviews, skip steps, or bypass established quality gates. Taking shortcuts will result in immediate failure. Every single stage MUST strictly follow the exact established workflow:
+>    1. **Clean Panel Pruning:** Strictly prune all `is_text_only`, `is_sfx_only`, and `is_credits_or_ad` panels from the storyboard. Merge all dialogue into adjacent real character panels.
+>    2. **Mercury-3 Narrative Summary:** Inception Labs Mercury-3 summary (`03_summary_mercury.txt`) to internalize character arcs and comedy beats.
+>    3. **High-Energy Story Scripting:** True Mamoru YouTube recap persona (witty, charismatic, situational comedy, transformative dialogue, strictly 8–14 words per beat, zero banned words, zero robotic fillers).
+>    4. **Mandatory 3rd-Party AI Quality Gatekeeper:** Every script MUST strictly pass [`scripts/quality_gatekeeper.py`](file:///D:/Python%20Projects/Manga%20Recap/scripts/quality_gatekeeper.py) evaluated by Apinex Kimi-K3 (`free/kimi-k3`), scoring $\ge 7/10$. If it fails or scores below 7, it must be rewritten and re-evaluated. Never proceed to audio or video without passing this gate!
+>    5. **Studio Voiceover Synthesis:** Concurrent Fish Audio API synthesis.
+>    6. **Pure GPU Batch Rendering & Cloud Stitching:** Kaggle Tesla T4 GPU NVENC at 355+ FPS with instant stream-copy stitching directly in the cloud container.
+> 🎯 **GROUND-TRUTH STORYBOARD & VISUAL SYNC STANDARD (IMMUTABLE LAW):** All scripts must strictly match the visual reality of the panels on disk. Never generate narration from unverified or shifted descriptions. Zero scanlation ads, zero text-only novel quote boxes, zero sound-effect crops, zero blank gutters. Every spoken clause (8–14 words) MUST directly describe or comment on the exact action and characters visible in that panel on screen (Benchmark: ORV Chapter 1 in [`scripts/build_golden_orv_ch01_verified.py`](file:///D:/Python%20Projects/Manga%20Recap/scripts/build_golden_orv_ch01_verified.py)).
 > 🎬 **MASTER BATCH RENDERING STANDARD (IMMUTABLE LAW):** Immediately read and strictly follow [`kaggle/MASTER_RENDER_STANDARD.md`](file:///D:/Python%20Projects/Manga%20Recap/kaggle/MASTER_RENDER_STANDARD.md). When 2 Kaggle accounts (4 instances) are available, divide chapters equally into 4 batches (e.g. 5+5+5+5). If only 1 account is available, divide into 2 equal batches (e.g. 10+10). NEVER render single chapters. All batch renders must execute continuously in-memory on Kaggle GPU NVENC (zero reloading/teardown between chapters). 100% pure GPU, zero CPU fallback.
 > 🖼️ **WEBP PANEL STANDARD (IMMUTABLE HARD RULE):** All extracted panels, panel crops, and staged datasets across all pipelines MUST strictly be stored, processed, and uploaded in **WebP format** (`.webp`, quality 90). NEVER store, package, or upload bloated uncompressed raw `.png` files for panels. Any script, pipeline, or agent extracting or packaging panels must convert and store them as WebP to keep archive sizes light (~60–75% smaller).
 > 📜 **SCRIPTING INSTRUCTIONS (GOLDEN STANDARD):** When asked to **"look for scripting instruction"** or writing/editing scripts, immediately read and strictly follow [`docs/scripting-instructions.md`](file:///D:/Python%20Projects/Manga%20Recap/docs/scripting-instructions.md). It defines the exact human YouTube recap tone, vocabulary bans, Mercury-3 summary requirement, panel pruning, and 8–14 word clause-to-panel sync rules.
@@ -67,14 +75,17 @@ Both must be green. They take about 9 seconds combined.
    - Video rendering must strictly leverage NVIDIA T4 hardware NVENC (`h264_nvenc`) and pure CUDA hardware pipelines (`scale_cuda`, `overlay_cuda`, PyTorch GPU memory buffers). Never bottleneck GPU throughput with CPU filtergraphs.
    - Whisper alignment and TTS synthesis must strictly run in PyTorch CUDA (`device="cuda"`).
 
-3. **STRICT RULE: NEVER INVENT NEW AD-HOC PATTERNS — USE WHAT ALREADY WORKED:**
-   - Under NO circumstances should any agent invent untested ad-hoc scripts, alternate stitching hacks, or deviate from established, verified pipeline workflows.
-   - **Stitching & Movie Compilations:** Always use the proven methodology from `scripts/stitch_all_chapters.py` (`-c:v h264_nvenc`, `-preset p4`, `-cq 28`, `-pix_fmt yuv420p`, `-c:a aac -b:a 128k`, `-movflags +faststart`). NEVER use fragile stream-copy (`-c copy`) for multi-chapter concatenation, as it causes timestamp discontinuities and breaks YouTube video processing.
-   - Maintain codebase clarity: reuse existing tools, do not leave confusing one-off scripts, and follow existing architectural standards.
+3. **STRICT RULE: ALWAYS USE INSTANT STITCHING (NEVER RE-ENCODE PRE-RENDERED CHAPTERS):**
+   - **Instant Stream-Copy Stitching (IMMUTABLE HARD RULE):** Always use `scripts/instant_stitch.py` (`-c copy`) for multi-chapter compilations and movies. NEVER re-encode pre-rendered chapters using CPU or GPU NVENC (`-c:v h264_nvenc`, `-preset p4`, `-cq 28`), as this wastes compute and time. Pre-rendered chapters already share identical 1080p 24fps NVENC specs and must strictly be concatenated instantly via stream-copy.
+   - The slow re-encoding stitcher (`scripts/stitch_all_chapters.py`) is permanently deleted and strictly banned across all pipelines and agents.
 
 4. **Fish Audio Batch Synthesis Must Run in Multi-Chapter Parallel Concurrency (Never Sequential):**
    - Never synthesize chapters sequentially one-by-one during batch voiceover runs. Fish Audio cloud API supports high concurrent throughput.
    - Always dispatch concurrent chapter workers (e.g. 4 to 8 chapters in parallel, each processing blocks concurrently), finishing dozens of chapters in 2–3 minutes total rather than waiting sequentially.
+
+5. **STRICT RULE: CLOUD-SIDE INSTANT STITCHING FOR MULTI-CHAPTER RECAPS (MANDATORY STANDARD):**
+   - From now on, whenever multi-chapter recaps, arc movies, or full-series compilations are produced, perform instant stream-copy stitching (`-c copy`) **directly in the Kaggle GPU cloud container** immediately upon batch render completion on Kaggle's high-speed NVMe storage (~4.5s for 30 chapters).
+   - This completely eliminates local external USB drive I/O bottlenecks and disk thrashing, producing the finished master recap movie directly in the cloud.
 
 
 ## Where the work is

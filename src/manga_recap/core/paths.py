@@ -69,6 +69,10 @@ class ChapterPaths:
         return self.root / PANELS_DIR
 
     @property
+    def panel_index_file(self) -> Path:
+        return self.panels_dir / "panel_index.json"
+
+    @property
     def panel_debug_dir(self) -> Path:
         return self.panels_dir / DEBUG_DIRNAME
 

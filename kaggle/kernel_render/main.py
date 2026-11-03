@@ -1162,19 +1162,14 @@ def main() -> int:
                 for _, vid in rendered_outputs:
                     f.write(f"file '{vid.resolve()}'\n")
 
-            # Stitch strictly using proven NVENC re-encode standard (Rule 3)
+            # Instant stream-copy stitching (Rule 3 & 5 standard: 100% lossless stream concat)
             stitch_cmd = [
                 exe,
                 "-y",
                 "-f", "concat",
                 "-safe", "0",
                 "-i", str(concat_list),
-                "-c:v", "h264_nvenc",
-                "-preset", "p4",
-                "-cq", "28",
-                "-pix_fmt", "yuv420p",
-                "-c:a", "aac",
-                "-b:a", "128k",
+                "-c", "copy",
                 "-movflags", "+faststart",
                 str(movie_output),
             ]

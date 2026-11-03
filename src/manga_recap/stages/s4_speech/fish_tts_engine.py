@@ -11,6 +11,7 @@ from __future__ import annotations
 import concurrent.futures
 import hashlib
 import io
+import re
 import subprocess
 import time
 from pathlib import Path
@@ -40,6 +41,30 @@ _log = get_logger("stages.s4_speech.fish_tts")
 
 DEFAULT_MODEL = "s2.1-pro-free"
 DEFAULT_VOICE_ID = "802e3bc2b27e49c2995d23ef70e6ac89"  # Energetic YouTube Recap Voice
+
+# Phonetic overrides for foreign manhwa names to ensure 100% consistent pronunciation
+PRONUNCIATION_MAP: list[tuple[re.Pattern, str]] = [
+    # ORV Character Names: map un-English consonant clusters to clean phonetic syllables
+    (re.compile(r"\bDokja's\b", re.IGNORECASE), "Dokya's"),
+    (re.compile(r"\bDokja\b", re.IGNORECASE), "Dokya"),
+    (re.compile(r"\bDock-ja's\b", re.IGNORECASE), "Dokya's"),
+    (re.compile(r"\bDock-ja\b", re.IGNORECASE), "Dokya"),
+    (re.compile(r"\bSangah's\b", re.IGNORECASE), "Sang-ah's"),
+    (re.compile(r"\bSangah\b", re.IGNORECASE), "Sang-ah"),
+    (re.compile(r"\bJoonghyuk\b", re.IGNORECASE), "Joong-hyuk"),
+    (re.compile(r"\bSooyoung\b", re.IGNORECASE), "Soo-young"),
+    (re.compile(r"\bGilyoung\b", re.IGNORECASE), "Gil-young"),
+    (re.compile(r"\bHeewon\b", re.IGNORECASE), "Hee-won"),
+    (re.compile(r"\bHyunsung\b", re.IGNORECASE), "Hyun-sung"),
+]
+
+
+def apply_pronunciation_map(text: str) -> str:
+    """Normalize tricky character names into unambiguous phonetic syllables for neural TTS."""
+    result = text
+    for pattern, replacement in PRONUNCIATION_MAP:
+        result = pattern.sub(replacement, result)
+    return result
 
 
 def _apply_tempo(data: np.ndarray, sr: int, tempo: float) -> np.ndarray:
@@ -203,30 +228,25 @@ def run_fish_tts(
         "model": model_name,
     }
 
-    # Pre-clean cache if force requested
     def _get_cache_path(b_id: str, text: str) -> Path:
         thash = hashlib.md5(f"{voice_id}:{text}".encode()).hexdigest()[:8]
-        cpath = cache_dir / f"{b_id}_{thash}.wav"
-        if force and cpath.exists():
-            try:
-                cpath.unlink()
-            except OSError:
-                pass
-        return cpath
+        return cache_dir / f"{b_id}_{thash}.wav"
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as executor:
-        future_to_block = {
-            executor.submit(
+        future_to_block = {}
+        for block in script.blocks:
+            spoken_text = apply_pronunciation_map(block.narration.strip())
+            cpath = _get_cache_path(block.block_id, spoken_text)
+            f = executor.submit(
                 _synthesize_single_block,
                 block.block_id,
-                block.narration.strip(),
+                spoken_text,
                 headers,
                 voice_id,
-                _get_cache_path(block.block_id, block.narration.strip()),
+                cpath,
                 temperature=temperature,
-            ): block.block_id
-            for block in script.blocks
-        }
+            )
+            future_to_block[f] = block.block_id
 
         completed_count = 0
         total_blocks = len(script.blocks)

@@ -61,7 +61,7 @@ class ManhwaSliceConfig:
     min_gutter_height: int = 25  # Minimum continuous rows to count as a gutter
     white_lum_thresh: float = 235.0  # Luminance threshold for white gutters
     black_lum_thresh: float = 25.0  # Luminance threshold for black gutters
-    max_gutter_std: float = 8.0  # Max row luminance std for white/black gutters
+    max_gutter_std: float = 14.0  # Max row luminance std for white/black gutters (allows JPEG noise)
     max_grey_std: float = 4.0  # Max row luminance std for solid grey gutters
     max_gutter_edge_density: float = 0.01  # Max Canny edge pixel ratio per row (zero art)
     canny_low: int = 50
@@ -72,8 +72,9 @@ class ManhwaSliceConfig:
     bubble_conf_threshold: float = 0.35  # Confidence for ONNX bubble detector
     extract_text_crops: bool = True
 
-    # Pruning parameters
+    # Pruning & splitting parameters
     min_panel_height: int = 70  # Skip tiny slivers < 70px
+    max_panel_height: int = 2400  # Split oversized candidate blocks > 2400px at low edge-density valleys
     max_aspect_ratio: float = 15.0  # Skip extreme aspect ratios (>15:1)
     filter_credits: bool = True
     credit_patterns: list[str] = field(
@@ -194,25 +195,33 @@ class ContinuousCanvas:
 
         self.width: int = max_w
         self.total_height: int = cur_y
+        self._cache: dict[int, Image.Image] = {}
 
     def __len__(self) -> int:
         return len(self.slices)
 
     def _load_slice_image(self, slice_meta: SliceMetadata) -> Image.Image:
-        """Load a slice as a PIL RGB Image."""
+        """Load a slice as a PIL RGB Image (cached in memory)."""
+        if slice_meta.index in self._cache:
+            return self._cache[slice_meta.index]
+
         if isinstance(slice_meta.source, Path):
             with Image.open(slice_meta.source) as im:
-                return im.convert("RGB")
+                img = im.convert("RGB")
         elif isinstance(slice_meta.source, Image.Image):
-            return slice_meta.source.convert("RGB")
+            img = slice_meta.source.convert("RGB")
         elif isinstance(slice_meta.source, np.ndarray):
             arr = slice_meta.source
             if arr.ndim == 2:
                 arr = cv2.cvtColor(arr, cv2.COLOR_GRAY2RGB)
             elif arr.shape[2] == 4:
                 arr = cv2.cvtColor(arr, cv2.COLOR_RGBA2RGB)
-            return Image.fromarray(arr)
-        raise ValueError(f"Cannot load slice: {slice_meta.source}")
+            img = Image.fromarray(arr)
+        else:
+            raise ValueError(f"Cannot load slice: {slice_meta.source}")
+
+        self._cache[slice_meta.index] = img
+        return img
 
     def compute_row_metrics(
         self,
@@ -408,7 +417,57 @@ def detect_gutters(
     # 4. Extract candidate non-gutter segments
     blocks = _find_false_runs(is_gutter)
 
+    # 5. Split oversized blocks (> max_panel_height) at low edge-density valleys
+    if config.max_panel_height > 0:
+        blocks = _split_oversized_blocks(blocks, metrics, config)
+
     return is_gutter, blocks
+
+
+def _split_oversized_blocks(
+    blocks: list[tuple[int, int]],
+    metrics: RowMetrics,
+    config: ManhwaSliceConfig,
+) -> list[tuple[int, int]]:
+    """Split candidate blocks taller than max_panel_height at low edge-density valleys.
+
+    Recursively splits until no segment exceeds max_panel_height, preventing
+    multi-panel columns from merging into un-splittable mega-strips.
+    """
+    out: list[tuple[int, int]] = []
+    max_h = config.max_panel_height
+    min_h = config.min_panel_height
+
+    for sy, ey in blocks:
+        queue = [(sy, ey)]
+        while queue:
+            cur_sy, cur_ey = queue.pop(0)
+            cur_h = cur_ey - cur_sy
+            if cur_h <= max_h:
+                out.append((cur_sy, cur_ey))
+                continue
+
+            target_cut = cur_sy + cur_h // 2
+            search_radius = max(min_h, int(cur_h * 0.35))
+            w_start = max(cur_sy + min_h, target_cut - search_radius)
+            w_end = min(cur_ey - min_h, target_cut + search_radius)
+
+            if w_end <= w_start:
+                cut_y = target_cut
+            else:
+                w_edges = metrics.edge_density[w_start:w_end]
+                w_std = metrics.std_lum[w_start:w_end]
+                dist = np.abs(np.arange(w_start, w_end) - target_cut) / float(search_radius)
+
+                cost = (w_edges * 100.0) + (w_std / 255.0 * 10.0) + (dist * 2.0)
+                best_idx = int(np.argmin(cost))
+                cut_y = w_start + best_idx
+
+            queue.append((cur_sy, cut_y))
+            queue.append((cut_y, cur_ey))
+
+    out.sort(key=lambda b: b[0])
+    return out
 
 
 @dataclass
@@ -501,6 +560,11 @@ def classify_segment(
     fg_pixels = np.count_nonzero(fg_mask)
     if fg_pixels == 0:
         return "VOID", {"uniform_ratio": uniform_ratio}
+
+    # 2.5 Check for scanlation credit screens / publisher logos at chapter boundaries
+    if is_boundary and config.filter_credits:
+        if (h < 140 and (w / max(1, h) >= 3.5)) or (uniform_ratio >= 0.85 and h < 140):
+            return "CREDIT", {"uniform_ratio": uniform_ratio, "reason": "boundary_credit"}
 
     # Measure color saturation of foreground:
     # Manhwa artwork has rich color saturation (skin, hair, clothing, effects).

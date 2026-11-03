@@ -43,15 +43,16 @@ def process_single_chapter(ch_num: int) -> tuple[int, bool, int, float, str]:
     if not raw_ch_dir.exists():
         return ch_num, False, 0, 0.0, f"Raw chapter dir not found: {raw_ch_dir}"
 
-    out_panel_dir = HAKUNIKU_PANELS_ROOT / f"Chapter {ch_num}"
-    if out_panel_dir.exists():
-        shutil.rmtree(out_panel_dir, ignore_errors=True)
-    out_panel_dir.mkdir(parents=True, exist_ok=True)
+    out_chapter_dir = HAKUNIKU_PANELS_ROOT / f"Chapter {ch_num}"
+    out_panels_dir = out_chapter_dir / "02_panels"
+    if out_chapter_dir.exists():
+        shutil.rmtree(out_chapter_dir, ignore_errors=True)
+    out_panels_dir.mkdir(parents=True, exist_ok=True)
 
     ch_id = f"orv_ch{ch_num:02d}"
     try:
         config = ManhwaSliceConfig(webp_quality=90)
-        res = slice_manhwa(raw_ch_dir, out_panel_dir, chapter_id=ch_id, config=config, force=True)
+        res = slice_manhwa(raw_ch_dir, out_panels_dir, chapter_id=ch_id, config=config, force=True)
         panel_count = res.panel_count
 
         # Also update / ensure chapter 02_panels junction in data/chapters
@@ -60,21 +61,15 @@ def process_single_chapter(ch_num: int) -> tuple[int, bool, int, float, str]:
         data_panels_dir = data_ch_dir / "02_panels"
 
         # If data_panels_dir is a junction or directory, unlink/remove
-        if data_panels_dir.exists():
-            import stat
-            try:
-                s = os.lstat(str(data_panels_dir))
-                if s.st_file_attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT:
-                    import subprocess
-                    subprocess.run(["cmd", "/c", "rmdir", str(data_panels_dir)], check=True, capture_output=True)
-                else:
-                    shutil.rmtree(data_panels_dir, ignore_errors=True)
-            except Exception:
+        if data_panels_dir.exists() or os.path.islink(data_panels_dir):
+            import subprocess
+            subprocess.run(["cmd", "/c", "rmdir", str(data_panels_dir)], capture_output=True)
+            if data_panels_dir.exists():
                 shutil.rmtree(data_panels_dir, ignore_errors=True)
 
-        # Create fresh directory junction to Hakuniku panels
+        # Create fresh directory junction to Hakuniku panels/02_panels
         import subprocess
-        subprocess.run(["cmd", "/c", "mklink", "/J", str(data_panels_dir), str(out_panel_dir)], capture_output=True)
+        subprocess.run(["cmd", "/c", "mklink", "/J", str(data_panels_dir), str(out_panels_dir)], capture_output=True)
 
         elapsed = time.time() - t0
         return ch_num, True, panel_count, elapsed, ""

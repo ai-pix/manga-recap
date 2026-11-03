@@ -74,7 +74,7 @@ def run(
                 "id": f"{client.username}/{kernel_slug}",
                 "title": kernel_slug,
                 "enable_gpu": enable_gpu,
-                "dataset_sources": [],
+                "dataset_sources": ["wampireai/manga-recap-render-bin"],
             },
         )
         client.push_kernel(work_dir)

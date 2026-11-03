@@ -94,6 +94,9 @@ STAGE_LABELS = {
 
 def stage_artifact_exists(stage: Stage, paths: ChapterPaths) -> bool:
     """Has this stage's output already been produced?"""
+    if stage.name == "s0_ingest":
+        if paths.panels_dir.exists() and any(paths.panels_dir.glob("panel_*")):
+            return True
     if stage.produces.endswith("/"):
         target = paths.root / stage.produces.rstrip("/")
         return target.exists() and any(target.iterdir())

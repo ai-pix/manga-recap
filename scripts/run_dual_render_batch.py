@@ -172,6 +172,20 @@ def upload_archive(archive: Path, timeout: float = 1200.0) -> str:
         print(f"[upload] SUCCESS via tmpfiles.org ({time.time() - t0:.1f}s): {direct_url}", flush=True)
         return direct_url
     except Exception as e:
+        print(f"[upload] tmpfiles.org failed: {e}. Trying filebin.net...", flush=True)
+
+    # 3. Fallback to filebin.net
+    try:
+        import uuid
+        bin_id = f"mr-{uuid.uuid4().hex[:10]}"
+        name = f"manga_batch_{archive.stem}_{int(time.time())}.zip"
+        url_target = f"https://filebin.net/{bin_id}/{name}"
+        with archive.open("rb") as f:
+            resp = httpx.post(url_target, content=f.read(), timeout=timeout)
+        resp.raise_for_status()
+        print(f"[upload] SUCCESS via filebin.net ({time.time() - t0:.1f}s): {url_target}", flush=True)
+        return url_target
+    except Exception as e:
         raise RuntimeError(f"All payload upload hosts failed: {e}") from e
 
 
@@ -189,7 +203,7 @@ def stage_and_push(client: KaggleClient, slug: str, url: str) -> None:
             "title": slug,
             "enable_gpu": True,
             "enable_internet": True,
-            "dataset_sources": ["wampireai/manga-recap-render-bin"],
+            "dataset_sources": [],
         },
     )
     print(f"[push] Pushing {kernel_id} to Kaggle...", flush=True)

@@ -7,7 +7,7 @@ project:
   slug: manga-recap
   # Selects the series bible at data/series/<series_name>/series.md. Set this to
   # the manga you are working on so the narrator uses its real character names.
-  series_name: tomb-raider-king
+  series_name: omniscient-readers-viewpoint
   # Kaggle API credentials live in ~/.kaggle/kaggle.json (already present).
 
 paths:
@@ -96,7 +96,7 @@ describe:
   # have been described. Panel text in a downscaled crop is a few pixels tall
   # and reads as [illegible] often enough that the recap loses the reason
   # anything happens. The text crops are small, so this pass is cheap.
-  transcribe: false
+  transcribe: true
   # Text crops per transcription request. A transcript is short, so this can be
   # the same as the description batch size, and making it so halves the number
   # of requests the transcription pass needs. Matched to llm.vision.batch_size
@@ -155,6 +155,13 @@ script:
     - black_screen
     - black_background
     - text_only
+    - text_page
+    - caption_boxes
+    - caption_box
+    - black_void
+    - white_void
+    - dark_void
+    - abstract_void
 
 # ---------------------------------------------------------------------------
 # Stage 1 - panel cropping (runs locally)
@@ -513,8 +520,8 @@ sfx:
 # cloning source once the pipeline is proven end to end.
 # ---------------------------------------------------------------------------
 narration:
-  # Tempo multiplier: snappy, high-energy YouTube recap delivery (1.08x = 8% faster)
-  tempo: 1.08
+  # Tempo multiplier: natural conversational YouTube recap delivery (1.04x = 4% faster)
+  tempo: 1.04
   # Insert a short pause between blocks, in seconds. Natural conversational rhythm.
   block_gap_seconds: 0.12
   # Normalise narration loudness to this LUFS before mixing.
