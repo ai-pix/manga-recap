@@ -74,7 +74,7 @@ def run(
                 "id": f"{client.username}/{kernel_slug}",
                 "title": kernel_slug,
                 "enable_gpu": enable_gpu,
-                "dataset_sources": ["wampireai/manga-recap-render-bin"],
+                "dataset_sources": list(config.get("render.dataset_sources", [])),
             },
         )
         client.push_kernel(work_dir)
@@ -206,7 +206,7 @@ def _build_payload(paths: ChapterPaths, config: Config) -> str:
     return payload.upload(
         archive,
         host=str(config.get("render.payload_host", payload.DEFAULT_HOST)),
-        filename=f"{paths.chapter_id}-render.zip",
+        filename=f"{paths.chapter_id.replace('/', '_')}-render.zip",
     )
 
 
