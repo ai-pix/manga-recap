@@ -102,6 +102,8 @@ def get_protagonist_name(series_name: str = "") -> str:
         from manga_recap.core.config import load_config
         cfg = load_config()
         s_name = str(cfg.get("project.series_name", "")).lower()
+    if "pick me up" in s_name or "gacha" in s_name:
+        return "Han Islat (Loki)"
     if "eleceed" in s_name:
         return "Jiwoo and Kayden"
     if "omniscient" in s_name or "orv" in s_name:
@@ -229,7 +231,7 @@ Respond ONLY in valid JSON matching this schema:
     }
 
 
-def check_script_quality(script_path: Path, min_words: int = 750, max_words: int = 1400, run_ai_judge: bool = True) -> QualityGateResult:
+def check_script_quality(script_path: Path, min_words: int = 750, max_words: int = 1400, run_ai_judge: bool = True, series_name: str = "") -> QualityGateResult:
     if not script_path.exists():
         return QualityGateResult(
             chapter_id=script_path.parent.name,
@@ -255,7 +257,7 @@ def check_script_quality(script_path: Path, min_words: int = 750, max_words: int
         narr = b.get("narration", "").strip()
         words = narr.split()
         total_words += len(words)
-        script_lines.append(f"[{b.get('block_id')}] {narr}")
+        script_lines.append(narr)
 
         # Gate 2: Robotic fillers
         for rp in ROBOTIC_PHRASES:
@@ -333,7 +335,8 @@ def check_script_quality(script_path: Path, min_words: int = 750, max_words: int
     ai_eval = {}
     if run_ai_judge and len(failed_gates) == 0:
         script_full_text = "\n".join(script_lines)
-        ai_eval = call_third_party_ai_judge(script_full_text, total_words, series_name=data.get("series", ""))
+        detected_series = series_name or data.get("series", "") or ("pick_me_up" if "pick_me_up" in str(script_path).lower() else "")
+        ai_eval = call_third_party_ai_judge(script_full_text, total_words, series_name=detected_series)
         score = ai_eval.get("score", 10)
         ai_passed = ai_eval.get("passed", True) and (score >= 7)
 

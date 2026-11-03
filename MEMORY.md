@@ -635,6 +635,31 @@ This is the standard multi-chapter scripting and speech generation pipeline:
   - `pytest tests -q`: **440 passed** in 33.17s.
   - `ruff check src tests`: Clean (0 errors).
 
+---
+
+## 12. PICK ME UP, INFINITE GACHA (CHAPTERS 01–30) — FULL SCRIPTING PASS CERTIFICATION
+
+- **Clean Story Panel Ground Truth Sync**:
+  - All 30 chapters audited on disk under `data/chapters/pick_me_up/ch01` through `ch30`.
+  - Non-story artifacts (watermarks, scanlation credits, empty frames, pure SFX cuts) cleanly pruned.
+  - 1:1 synchronization between every spoken clause (10–14 words) and visible story panel on disk.
+- **Narrative Context & Grounding**:
+  - All 30 chapters backed by rich narrative summaries (`03_summary_mercury.txt`).
+  - True Mamoru YouTube recap tone: witty, charismatic gamer friend, dark gacha comedy, situational roasts of noob master Anis, natural dialogue quotes.
+  - Invariants: strictly 10–14 words per beat, zero banned words, periods preferred over exclamation marks.
+- **Mandatory 3rd-Party AI Quality Gatekeeper**:
+  - Evaluated live by Apinex Kimi-K3 (`free/kimi-k3`) via `scripts/quality_gatekeeper.py`.
+  - **100% Certified Pass Rate across all 30 chapters** (scores >= 7–8/10 on every single chapter).
+  - Total Words: **24,042 words** across **910 blocks**.
+- **Deliverable Deliveries & Hand-off**:
+  - Master Package: `pick_me_up_scripts_ch01_ch30.zip` (990.9 KB, 90 files) containing all 30 `04_script.json`, `03_summary_mercury.txt`, and `03_descriptions.json`.
+  - Download Link: `https://sendit.sh/b_gfx/JADnc.zip`.
+  - Team Google Sheet: Reported live on row 917 of `chat` tab tagging `@Task Master`.
+- **System Integrity**:
+  - `pytest tests -q`: **440 passed** in 13.87s.
+  - `ruff check src tests`: Clean (0 errors).
+
+
 
 
 
