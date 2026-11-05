@@ -18,10 +18,12 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import time
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from .logging import format_duration, get_logger
@@ -38,6 +40,19 @@ STATUS_FAILED = {"error", "canceled", "cancelled", "dead", "timeout"}
 #   wampireai/manga-recap-tts has status "KernelWorkerStatus.ERROR"
 # so the word has to be pulled out of the sentence before anything compares it.
 _STATUS_PREFIX = "kernelworkerstatus."
+
+# `kaggle datasets files` prints a naive UTC creation time per file, e.g.
+#   job.json    862  2026-11-04 07:19:12.687000
+_LISTING_TIME = re.compile(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}")
+
+
+def _newest_listing_time(text: str) -> datetime | None:
+    """The most recent file registration time in a dataset listing."""
+    stamps = [
+        datetime.strptime(match.group(0), "%Y-%m-%d %H:%M:%S")
+        for match in _LISTING_TIME.finditer(text)
+    ]
+    return max(stamps) if stamps else None
 
 
 def normalise_status(output: str) -> str:
@@ -245,6 +260,49 @@ class KaggleClient:
         result = self._run(["datasets", "status", f"{self.username}/{slug}"], check=False)
         return result.returncode == 0
 
+    def wait_for_dataset_files(
+        self,
+        ref: str,
+        names: tuple[str, ...] = (),
+        *,
+        not_before: datetime | None = None,
+        timeout_seconds: int = 600,
+        poll_seconds: int = 15,
+    ) -> None:
+        """Block until Kaggle has registered this dataset version for mounting.
+
+        A version is still being unpacked after the upload command returns, so a
+        kernel pushed immediately mounts an empty folder. The kernel then fails
+        with a message about a missing payload URL, which reads like a code bug
+        rather than a race, and the whole run is wasted.
+
+        `not_before` matters because the listing also shows the previous version,
+        which already carries the same file names. A re-upload is only ready once
+        a file dated after it appears.
+        """
+        if not names and not_before is None:
+            return
+        deadline = time.monotonic() + timeout_seconds
+        missing = ", ".join(names)
+        waiting = missing if names else "the new version"
+        while time.monotonic() < deadline:
+            result = self._run(["datasets", "files", ref], check=False)
+            listing = result.stdout or ""
+            missing = [name for name in names if name not in listing]
+            newest = _newest_listing_time(listing)
+            registered = not_before is None or (
+                newest is not None and newest >= not_before
+            )
+            if not missing and registered:
+                return
+            waiting = ", ".join(missing) if missing else "a newer version"
+            self._log.info("Waiting for %s to expose %s", ref, waiting)
+            time.sleep(poll_seconds)
+        raise KaggleError(
+            f"{ref} did not register {waiting} within {timeout_seconds}s. Pushing "
+            "the kernel now would mount an empty payload."
+        )
+
     def upload_dataset(
         self,
         source_dir: Path,
@@ -253,11 +311,16 @@ class KaggleClient:
         private: bool = True,
         description: str = "",
         version_note: str = "",
+        required_files: tuple[str, ...] = (),
     ) -> str:
         """Create the dataset, or upload a new version if it already exists.
 
         Kaggle requires `dataset-metadata.json` to sit in the source directory,
         so it is written here and left behind for the kernel's `dataset_sources`.
+
+        `required_files` are names the caller needs mounted before it pushes a
+        kernel. Keep them at the dataset root: the file listing is paginated, so
+        a deep path can sit past the first page.
         """
         source_dir = Path(source_dir)
         if not source_dir.exists() or not any(source_dir.iterdir()):
@@ -273,8 +336,12 @@ class KaggleClient:
             args = ["datasets", "create", "-p", str(source_dir), "-r", "zip"]
             self._log.info("Creating dataset %s", slug)
 
+        uploaded_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=60)
         self._run(args, timeout=1800)
-        return f"{self.username}/{slug}"
+        ref = f"{self.username}/{slug}"
+        if not self.dry_run:
+            self.wait_for_dataset_files(ref, required_files, not_before=uploaded_at)
+        return ref
 
     def _write_dataset_metadata(
         self, directory: Path, slug: str, private: bool, description: str

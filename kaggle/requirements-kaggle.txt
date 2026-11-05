@@ -13,6 +13,7 @@ faster-whisper>=1.0
 openai-whisper
 huggingface_hub>=0.28.0
 fsspec>=2024.9.0
+av<18
 
 # Audio + video handling
 soundfile>=0.12

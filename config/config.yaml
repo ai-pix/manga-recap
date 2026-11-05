@@ -376,16 +376,19 @@ opencv_crop:
 # ---------------------------------------------------------------------------
 tts:
   # TTS backend:
-  #   - "fish-tts"   (Fish Audio s2.1-pro-free cloud TTS with 44.1kHz studio fidelity)
+  #   - "fish-tts"      (Fish Audio s2.1-pro-free cloud TTS, one clip per block)
+  #   - "fish-whisper"  (continuous Fish Audio narration + Kaggle GPU forced alignment)
   #   - "gemini-tts" (Google Gemini 3.8 Flash TTS with Whisper alignment - human-grade prosody)
   #   - "edge-tts"   (local neural TTS, ~15s)
   #   - "chatterbox" (Kaggle GPU kernel for voice cloning)
-  backend: fish-tts
+  backend: fish-whisper
 
   # Fish Audio settings
   fish_model: s2.1-pro-free
   fish_voice_id: "802e3bc2b27e49c2995d23ef70e6ac89"  # Energetic YouTube Recap Voice
   fish_concurrency: 4
+  fish_request_timeout_seconds: 300
+  fish_max_chars: 12000
 
   # Gemini 3.8 Flash TTS settings
   # Voices: "Puck" (energetic/friendly recap male), "Charon" (deep cinematic male), "Fenrir" (confident male)
@@ -397,6 +400,7 @@ tts:
   concurrency: 10
 
   kernel_slug: manga-recap-tts
+  align_dataset_prefix: manga-recap-align
   payload_host: https://catbox.moe
   poll_interval_seconds: 15
   max_wait_seconds: 21600          # 6h; Kaggle's own hard limit is 12h
@@ -423,7 +427,10 @@ align:
   # Minimum tokens needed before we trust Whisper alignment over the fallback.
   min_tokens_for_alignment: 40
   # Script token to whisper word similarity floor. Below this, mark degraded.
-  min_match_ratio: 0.55
+  min_match_ratio: 0.85
+  # Continuous narration must not ship estimated word cuts. A failed alignment
+  # is a re-run condition, not a reason to render guessed panel boundaries.
+  strict: true
   beam_size: 5
 
 # ---------------------------------------------------------------------------
@@ -431,10 +438,15 @@ align:
 # ---------------------------------------------------------------------------
 render:
   kernel_slug: manga-recap-render
-  # Same one-zip arrangement as stage 4. This payload carries the panels, the
+  # Same one-payload arrangement as stage 4. This payload carries the panels, the
   # script, the narration audio and the timeline, so stage 4's outputs travel to
   # stage 5 the same way stage 2's outputs travel to stage 4.
-  payload_host: https://sendit.sh
+  #
+  # The payload goes to a private Kaggle Dataset that the kernel mounts read-only.
+  # Public file hosts are deliberately not used: they would put the source artwork
+  # and narration on an open link. Set `payload_url` below to point the kernel at
+  # an archive you host yourself instead.
+  payload_dataset_prefix: manga-recap-render
   enable_gpu: true
   # Strictly h264_nvenc hardware GPU encoding. CPU software encoding is completely forbidden.
   encoder: h264_nvenc

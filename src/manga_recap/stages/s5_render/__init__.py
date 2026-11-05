@@ -26,6 +26,7 @@ from ...core.schema import (
     load_model,
     save_model,
 )
+from ...render.sync import beats_for_blocks
 
 _log = get_logger("stages.s5_render")
 
@@ -33,6 +34,42 @@ _log = get_logger("stages.s5_render")
 # package sits four levels down, so `parents[3]` is `src/` and silently points at
 # a directory that does not exist.
 KERNEL_DIR = repo_path("kaggle/kernel_render")
+
+
+def _script_source(paths: ChapterPaths) -> Path:
+    """The storyboard this chapter's narration was actually synthesized from.
+
+    Stage 4 prefers `04_script_fish.json` when one exists. Staging the root
+    script instead would derive beats from words nobody spoke, and the cuts
+    would silently fall back to estimating where each sentence begins.
+    """
+    fish_script = paths.root / "04_script_fish.json"
+    return fish_script if fish_script.exists() else paths.script_file
+
+
+def _check_word_coverage(
+    script: ScriptFile,
+    timeline: TimelineFile,
+    script_name: str,
+    timeline_name: str,
+    *,
+    max_words: int = 14,
+) -> None:
+    """Refuse to render cuts that would be guessed rather than measured.
+
+    `plan_shots` only warns when the timeline's word count and the script's token
+    count disagree, then interpolates every cut from word counts. The video looks
+    finished and is wrong throughout, so the disagreement has to stop the run.
+    """
+    beats = beats_for_blocks(script.blocks, max_words=max_words)
+    needed = sum(beat.word_count for beat in beats)
+    if needed and len(timeline.words) != needed:
+        raise ValueError(
+            f"{script_name} needs {needed} word timings, but {timeline_name} holds "
+            f"{len(timeline.words)}. The narration and the storyboard disagree, so every "
+            "panel cut would be interpolated instead of read off the audio. Run "
+            "`manga speak` against this script first."
+        )
 
 
 def run(
@@ -50,6 +87,21 @@ def run(
         )
     timeline = load_model(paths.timeline_file, TimelineFile)
 
+    script_source = _script_source(paths)
+    _check_word_coverage(
+        load_model(script_source, ScriptFile),
+        timeline,
+        script_source.name,
+        paths.timeline_file.name,
+        max_words=int(config.get("render.max_words_per_beat", 14)),
+    )
+    if script_source != paths.script_file:
+        _log.info(
+            "Stage 5: rendering %s, the script %s was synthesized from",
+            script_source.name,
+            paths.narration_file.name,
+        )
+
     if paths.final_file.exists() and not force:
         _log.info("Stage 5: final video already exists, skipping")
         return load_model(paths.render_manifest_file, RenderManifest)
@@ -63,9 +115,12 @@ def run(
         client = KaggleClient()
 
     with timed(f"stage 5 render (Kaggle {kernel_slug})"):
-        payload_url = _build_payload(paths, config)
+        payload_url, input_dataset = _build_payload(paths, config, script_source)
         enable_gpu = bool(config.get("render.enable_gpu", True))
         _log.info("Stage 5: Kaggle kernel GPU acceleration: %s", enable_gpu)
+        dataset_sources = list(config.get("render.dataset_sources", []))
+        if input_dataset:
+            dataset_sources.append(input_dataset)
         work_dir = payload.stage_from_url(
             kernel_dir=KERNEL_DIR,
             url=payload_url,
@@ -74,9 +129,10 @@ def run(
                 "id": f"{client.username}/{kernel_slug}",
                 "title": kernel_slug,
                 "enable_gpu": enable_gpu,
-                "dataset_sources": list(config.get("render.dataset_sources", [])),
+                "dataset_sources": dataset_sources,
             },
         )
+
         client.push_kernel(work_dir)
 
         kernel_id = f"{client.username}/{kernel_slug}"
@@ -134,7 +190,7 @@ def run(
 
     shutil.rmtree(download_dir, ignore_errors=True)
 
-    _report(paths, manifest)
+    _report(paths, manifest, script_source)
     write_stage_status(
         paths.chapter_id,
         "s5_render",
@@ -155,13 +211,19 @@ def run(
 # ---------------------------------------------------------------------------
 
 
-def _build_payload(paths: ChapterPaths, config: Config) -> str:
-    """Bundle everything the render kernel needs into one archive and host it.
+def _build_payload(
+    paths: ChapterPaths, config: Config, script_source: Path | None = None
+) -> tuple[str, str]:
+    """Bundle everything the render kernel needs and get it onto Kaggle.
 
-    Panels, script, narration audio and timeline all go into a single zip. The
-    old design split them across two Kaggle Datasets and then had the kernel
-    search both mounts for each file, which meant guessing which mount a given
-    file lived in.
+    Panels, script, narration audio and timeline all travel together as one
+    payload. The old design split them across two Kaggle Datasets and then had
+    the kernel search both mounts for each file, which meant guessing which
+    mount a given file lived in.
+
+    Returns `(payload_url, dataset_ref)`; exactly one is set. A public file host
+    is used only when `render.payload_url` is configured, because the default
+    keeps the source artwork private.
     """
     staging = paths.root / "_kaggle_input"
     if staging.exists():
@@ -170,7 +232,8 @@ def _build_payload(paths: ChapterPaths, config: Config) -> str:
 
     for panel in paths.panel_images():
         shutil.copy2(panel, staging / "panels" / panel.name)
-    shutil.copy2(paths.script_file, staging / "script.json")
+    shutil.copy2(script_source or _script_source(paths), staging / "script.json")
+
     shutil.copy2(paths.narration_file, staging / paths.narration_file.name)
     shutil.copy2(paths.timeline_file, staging / paths.timeline_file.name)
     shutil.copy2(paths.narration_file, staging / "narration.wav")
@@ -198,16 +261,28 @@ def _build_payload(paths: ChapterPaths, config: Config) -> str:
         if module.name != "main.py":
             shutil.copy2(module, lib_dir / module.name)
 
-    archive = payload.build_archive(staging, paths.root / "_kaggle_payload.zip")
     override = str(config.get("render.payload_url", "") or "")
     if override:
         _log.info("Stage 5: using configured payload URL instead of uploading")
-        return override
-    return payload.upload(
-        archive,
-        host=str(config.get("render.payload_host", payload.DEFAULT_HOST)),
-        filename=f"{paths.chapter_id.replace('/', '_')}-render.zip",
+        return override, ""
+
+    # Panels and script are the source artwork. A file host puts them on the open
+    # internet under a guessable link; a private Dataset mounts read-only inside
+    # the kernel and skips the download entirely.
+    client = KaggleClient()
+    dataset_prefix = str(config.get("render.payload_dataset_prefix", "manga-recap-render"))
+    safe_chapter = "".join(c.lower() if c.isalnum() else "-" for c in paths.chapter_id).strip("-")
+    dataset_slug = f"{dataset_prefix}-{safe_chapter}"[:100]
+    _log.info("Stage 5: uploading render payload as private dataset %s", dataset_slug)
+    input_dataset = client.upload_dataset(
+        staging,
+        dataset_slug,
+        private=True,
+        description=f"Render payload for {paths.chapter_id}",
+        version_note="panels, storyboard, narration and timeline",
+        required_files=("job.json",),
     )
+    return "", input_dataset
 
 
 def _build_job(paths: ChapterPaths, config: Config) -> dict:
@@ -272,7 +347,9 @@ def set_kernel_datasets(
 # ---------------------------------------------------------------------------
 
 
-def _report(paths: ChapterPaths, manifest: RenderManifest) -> None:
+def _report(
+    paths: ChapterPaths, manifest: RenderManifest, script_source: Path | None = None
+) -> None:
     """Log the render, and check every panel actually made it into the video.
 
     A panel that is in the script but missing from the video is the failure this
@@ -288,7 +365,7 @@ def _report(paths: ChapterPaths, manifest: RenderManifest) -> None:
         paths.final_file,
     )
 
-    script = load_model(paths.script_file, ScriptFile)
+    script = load_model(script_source or _script_source(paths), ScriptFile)
     expected = set(script.referenced_panels())
     shown = manifest.panels_shown
 

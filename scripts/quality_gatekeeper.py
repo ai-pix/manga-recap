@@ -167,7 +167,7 @@ Respond ONLY in valid JSON matching this schema:
                     }
                 )
                 pace_apinex()
-                with urllib.request.urlopen(req, timeout=30) as resp:
+                with urllib.request.urlopen(req, timeout=45) as resp:
                     data = json.loads(resp.read().decode("utf-8"))
                     raw_reply = data["choices"][0]["message"]["content"]
                     # Clean json codeblocks
@@ -335,7 +335,7 @@ def check_script_quality(script_path: Path, min_words: int = 750, max_words: int
     ai_eval = {}
     if run_ai_judge and len(failed_gates) == 0:
         script_full_text = "\n".join(script_lines)
-        detected_series = series_name or data.get("series", "") or ("pick_me_up" if "pick_me_up" in str(script_path).lower() else "")
+        detected_series = series_name or data.get("series", "") or ("eleceed" if "eleceed" in str(script_path).lower() else "pick_me_up" if "pick_me_up" in str(script_path).lower() else "")
         ai_eval = call_third_party_ai_judge(script_full_text, total_words, series_name=detected_series)
         score = ai_eval.get("score", 10)
         ai_passed = ai_eval.get("passed", True) and (score >= 7)

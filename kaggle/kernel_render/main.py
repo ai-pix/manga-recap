@@ -76,6 +76,19 @@ PAYLOAD_URL = PAYLOAD_UNSET
 SEARCH_NAMES = ("job.json", "script.json", "timeline.json", "narration.wav", "panel_index.json")
 
 
+def _mounted_payload() -> Path | None:
+    """A payload already on disk as a private Kaggle Dataset, if there is one.
+
+    Returns "" from `_payload_url()` in that case: the files are mounted
+    read-only under /kaggle/input and need no download. Private Datasets keep
+    panels, script and audio off public file hosts.
+    """
+    for job in sorted(Path("/kaggle/input").rglob("job.json")):
+        if job.is_file():
+            return job.parent
+    return None
+
+
 def _payload_url() -> str:
     """Where this run's inputs are hosted. See the TTS kernel for the rationale."""
     if PAYLOAD_URL != PAYLOAD_UNSET and PAYLOAD_URL:
@@ -91,9 +104,14 @@ def _payload_url() -> str:
             if value:
                 return value
 
+    if _mounted_payload() is not None:
+        return ""
+
+    mounted = sorted(p.name for p in Path("/kaggle/input").glob("*/"))
     raise FileNotFoundError(
-        "This kernel has no payload URL. `manga render` writes one into the "
-        "kernel it pushes; pushing this directory by hand will not work."
+        "This kernel has no payload URL and no mounted payload dataset "
+        f"(under /kaggle/input: {mounted or 'nothing'}). `manga render` writes one "
+        "into the kernel it pushes; pushing this directory by hand will not work."
     )
 
 
@@ -128,6 +146,22 @@ def fetch_payload() -> Path:
     url = _payload_url()
 
     INPUT_ROOT.mkdir(parents=True, exist_ok=True)
+
+    if not url:
+        mounted = _mounted_payload()
+        if mounted is None:
+            raise FileNotFoundError("no payload URL and nothing mounted under /kaggle/input")
+        print(f"[kernel] using mounted payload dataset {mounted}", flush=True)
+        for item in mounted.iterdir():
+            target = INPUT_ROOT / item.name
+            if target.exists():
+                continue
+            if item.is_dir():
+                shutil.copytree(item, target)
+            else:
+                shutil.copy2(item, target)
+        return INPUT_ROOT
+
     archive = INPUT_ROOT / "payload.zip"
 
     headers = {"User-Agent": "curl/7.88.1"} if "filebin.net" in url else FETCH_HEADERS

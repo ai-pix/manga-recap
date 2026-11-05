@@ -65,6 +65,9 @@ def _payload_url() -> str:
     A `payload_url.txt` beside the script is accepted as a fallback for a manual
     push, though under Kaggle a script kernel runs as /kaggle/src/script.py so
     that file will not normally be found.
+
+    Alignment-only runs use a private Kaggle dataset instead. Those runs have no
+    URL and discover their payload from the mounted dataset.
     """
     if PAYLOAD_URL != PAYLOAD_UNSET and PAYLOAD_URL:
         return PAYLOAD_URL.strip()
@@ -78,6 +81,10 @@ def _payload_url() -> str:
             value = candidate.read_text(encoding="utf-8").strip()
             if value:
                 return value
+
+    mounted_job = next(Path("/kaggle/input").rglob("job.json"), None)
+    if mounted_job is not None:
+        return ""
 
     raise FileNotFoundError(
         "This kernel has no payload URL. `manga speak` writes one into the "
@@ -108,15 +115,18 @@ def _download(request, attempts: int = 4):
 
 
 def find_input() -> Path:
-    """Download the payload archive and unpack it.
+    """Locate the payload, either by downloading an archive or using a dataset.
 
-    The inputs are one zip at a URL rather than an attached dataset, because a
-    dataset per chapter is a lot of machinery for "put these files somewhere the
-    kernel can read them", and the mount layout is Kaggle's choice rather than
-    ours. The URL ships alongside this file as `payload_url.txt`, written by the
-    stage at push time.
+    One archive rather than a Kaggle Dataset is the original design: one request
+    instead of a dataset per chapter, and no dependence on Kaggle's mount layout.
+    Forced alignment uses a private dataset because its audio should not be
+    placed on a public file host.
     """
     url = _payload_url()
+    if not url:
+        for job in sorted(Path("/kaggle/input").rglob("job.json")):
+            return job.parent
+        raise FileNotFoundError("No mounted payload job.json was found under /kaggle/input")
 
     INPUT_ROOT.mkdir(parents=True, exist_ok=True)
     archive = INPUT_ROOT / "payload.zip"
@@ -144,7 +154,7 @@ def load_job(root: Path) -> dict:
     return json.loads((root / "job.json").read_text(encoding="utf-8"))
 
 
-def ensure_dependencies() -> None:
+def ensure_dependencies(root: Path) -> None:
     """Install what the TTS and alignment steps need using uv and permanent storage.
 
     Kaggle's GPU image ships CUDA-enabled torch, which is the expensive part and
@@ -154,7 +164,7 @@ def ensure_dependencies() -> None:
     import shutil
     import subprocess
 
-    requirements = next(INPUT_ROOT.glob("**/requirements-kaggle.txt"), None)
+    requirements = next(root.glob("**/requirements-kaggle.txt"), None)
     if requirements is None:
         print("[kernel] no requirements file in the payload; skipping install", flush=True)
         return
@@ -164,6 +174,8 @@ def ensure_dependencies() -> None:
         for line in requirements.read_text(encoding="utf-8").splitlines()
         if line.strip() and not line.startswith("#")
     ]
+    wanted = [w for w in wanted if not w.startswith("av")]
+    wanted.append("av<18")
     if not wanted:
         return
 
@@ -227,94 +239,150 @@ def main() -> int:
     print(f"[kernel] input dataset: {root.name}")
     print(f"[kernel] job: {json.dumps(job, indent=2)}")
 
-    script = json.loads((root / "script.json").read_text(encoding="utf-8"))
-    blocks = script.get("blocks", [])
-    if not blocks:
-        raise ValueError("script.json has no blocks. Nothing to narrate.")
-    print(f"[kernel] {len(blocks)} blocks to narrate")
-
-    # -- 1. synthesise ----------------------------------------------------
-    # The helper modules ride inside the payload. Kaggle does not put files that
-    # sat beside main.py on the path, so `lib/` has to be added explicitly.
     lib_dir = root / "lib"
     if lib_dir.is_dir():
         sys.path.insert(0, str(lib_dir))
         print(f"[kernel] helper modules from {lib_dir.name}/", flush=True)
 
-    ensure_dependencies()
+    ensure_dependencies(root)
 
-    try:
-        import transformers.utils.import_utils
+    mode = str(job.get("mode", "tts_align"))
+    if mode == "batch_align":
+        return _run_batch_align(root, job)
 
-        transformers.utils.import_utils.is_torchvision_available = lambda: False
-    except (ImportError, AttributeError):
-        pass
-
-    from tts_engine import TTSEngine
-
-    tts_settings = job.get("tts", {})
-    voice = tts_settings.get("voice", {})
-    engine = TTSEngine(
-        voice_mode=voice.get("mode", "builtin"),
-        reference_wav=_resolve_reference(root, voice.get("reference_wav")),
-        language_id=tts_settings.get("language_id", "en"),
-        workers_per_gpu=int(tts_settings.get("workers_per_gpu", 2)),
-    )
-
+    script = json.loads((root / "script.json").read_text(encoding="utf-8"))
+    blocks = script.get("blocks", [])
+    if not blocks:
+        raise ValueError("script.json has no blocks. Nothing to narrate.")
+    print(f"[kernel] {len(blocks)} blocks to narrate")
     block_texts = [block["narration"] for block in blocks]
     full_text = _join_narration(block_texts, gap_paragraph=True)
+    tts_settings = job.get("tts", {})
+    expected = None
 
-    print(f"[kernel] narrating {len(full_text)} characters")
-    result = engine.synthesize(full_text)
-    narration_path = engine.save(result, WORKING / NARRATION_NAME)
-    duration = len(result.audio) / float(result.sample_rate)
-    print(f"[kernel] narration: {duration:.1f}s at {result.sample_rate}Hz")
+    if mode == "align":
+        import soundfile as sf
 
-    expected = _plausible_duration(full_text, tts_settings)
-    if expected and not (expected[0] <= duration <= expected[1]):
-        print(
-            f"[kernel] WARNING: narration is {duration:.1f}s but {len(full_text)} "
-            f"characters at {tts_settings.get('duration_words_per_minute', 150)} wpm "
-            f"implies {expected[0]:.0f}-{expected[1]:.0f}s. The script may have been "
-            "truncated, or the voice may be running fast."
+        narration_path = root / NARRATION_NAME
+        if not narration_path.exists():
+            raise FileNotFoundError(f"Alignment payload has no {NARRATION_NAME}")
+        audio, sample_rate = sf.read(str(narration_path), dtype="float32")
+        if audio.ndim > 1:
+            audio = audio[:, 0]
+        duration = len(audio) / float(sample_rate)
+        tts_backend = str(job.get("tts_backend", "fish-audio-continuous"))
+        print(f"[kernel] aligning {duration:.1f}s of continuous narration", flush=True)
+    else:
+        try:
+            import transformers.utils.import_utils
+
+            transformers.utils.import_utils.is_torchvision_available = lambda: False
+        except (ImportError, AttributeError):
+            pass
+
+        from tts_engine import TTSEngine
+
+        voice = tts_settings.get("voice", {})
+        engine = TTSEngine(
+            voice_mode=voice.get("mode", "builtin"),
+            reference_wav=_resolve_reference(root, voice.get("reference_wav")),
+            language_id=tts_settings.get("language_id", "en"),
+            workers_per_gpu=int(tts_settings.get("workers_per_gpu", 2)),
         )
 
+        print(f"[kernel] narrating {len(full_text)} characters")
+        result = engine.synthesize(full_text)
+        narration_path = engine.save(result, WORKING / NARRATION_NAME)
+        duration = len(result.audio) / float(result.sample_rate)
+        sample_rate = result.sample_rate
+        tts_backend = result.backend
+        print(f"[kernel] narration: {duration:.1f}s at {sample_rate}Hz")
+
+        expected = _plausible_duration(full_text, tts_settings)
+        if expected and not (expected[0] <= duration <= expected[1]):
+            print(
+                f"[kernel] WARNING: narration is {duration:.1f}s but {len(full_text)} "
+                f"characters at {tts_settings.get('duration_words_per_minute', 150)} wpm "
+                f"implies {expected[0]:.0f}-{expected[1]:.0f}s. The script may have been "
+                "truncated, or the voice may be running fast."
+            )
+
     # -- 2. align ---------------------------------------------------------
-    from aligner import align_tokens, block_boundaries, normalise_tokens, proportional_boundaries
+    from aligner import align_tokens, normalise_tokens, proportional_boundaries
 
     align_settings = job.get("align", {})
+    strict = bool(align_settings.get("strict", False))
+    min_match_ratio = float(align_settings.get("min_match_ratio", 0.55))
+    max_words_per_beat = int(job.get("render", {}).get("max_words_per_beat", 14))
+
+    script_tokens: list[str] = []
+    block_token_counts: list[int] = []
+    beat_count = 0
+
+    if mode == "align":
+        from recap_sync import alignment_tokens, beats_for_blocks
+
+        beats = beats_for_blocks(blocks, max_words=max_words_per_beat)
+        beat_count = len(beats)
+        for block in blocks:
+            block_id = str(block.get("block_id", ""))
+            count = 0
+            for beat in beats:
+                if beat.block_id != block_id:
+                    continue
+                tokens = alignment_tokens(beat.text)
+                script_tokens.extend(tokens)
+                count += len(tokens)
+            block_token_counts.append(count)
+    else:
+        for text in block_texts:
+            tokens = normalise_tokens(text)
+            script_tokens.extend(tokens)
+            block_token_counts.append(len(tokens))
+
     words: list[dict] = []
     heard: list[tuple[str, float, float]] = []
-
-    try:
-        heard = transcribe(narration_path, align_settings)
-        print(f"[kernel] whisper heard {len(heard)} words")
-    except Exception as exc:  # noqa: BLE001 - fall back rather than lose the run
-        print(f"[kernel] transcription failed ({exc}); using proportional timing")
-        words = []
-
     boundaries: list[tuple[float, float]] = []
     method = "fallback_proportional"
     match_ratio = 0.0
 
+    try:
+        heard = transcribe(narration_path, align_settings)
+        print(f"[kernel] whisper heard {len(heard)} words")
+    except Exception as exc:  # noqa: BLE001
+        if strict:
+            raise RuntimeError(f"Strict forced alignment could not transcribe the audio: {exc}") from exc
+        print(f"[kernel] transcription failed ({exc}); using proportional timing")
+
     if heard:
-        script_tokens = [t for block in block_texts for t in normalise_tokens(block)]
         timings, match_ratio = align_tokens(script_tokens, heard)
         words = [
-            {"word": t.token, "start": round(t.start, 3), "end": round(t.end, 3)}
-            for t in timings
+            {"word": timing.token, "start": round(timing.start, 3), "end": round(timing.end, 3)}
+            for timing in timings
         ]
-        if match_ratio >= float(align_settings.get("min_match_ratio", 0.55)):
-            boundaries = block_boundaries(block_texts, timings)
+        if len(timings) == len(script_tokens) and match_ratio >= min_match_ratio:
+            boundaries = _beat_block_boundaries(timings, block_token_counts, duration)
             method = "aligned"
-            print(f"[kernel] aligned {len(boundaries)} blocks, ratio {match_ratio:.2f}")
+            print(
+                f"[kernel] aligned {len(boundaries)} blocks / {beat_count} beats, "
+                f"ratio {match_ratio:.2f}"
+            )
+        elif strict:
+            raise RuntimeError(
+                f"Strict forced alignment produced {len(timings)}/{len(script_tokens)} "
+                f"token timings at ratio {match_ratio:.2f}, below {min_match_ratio:.2f}."
+            )
         else:
             print(
                 f"[kernel] match ratio {match_ratio:.2f} is below "
-                f"{align_settings.get('min_match_ratio', 0.55)}; using proportional timing"
+                f"{min_match_ratio:.2f}; using proportional timing"
             )
+    elif strict:
+        raise RuntimeError("Strict forced alignment received no Whisper word timings.")
 
     if not boundaries:
+        if strict:
+            raise RuntimeError("Strict forced alignment produced no usable boundaries.")
         boundaries = proportional_boundaries(block_texts, duration)
         match_ratio = 0.0
 
@@ -340,9 +408,9 @@ def main() -> int:
     timeline = {
         "chapter_id": job.get("chapter_id", ""),
         "audio_file": NARRATION_NAME,
-        "sample_rate": result.sample_rate,
+        "sample_rate": sample_rate,
         "duration": round(duration, 3),
-        "tts_backend": result.backend,
+        "tts_backend": tts_backend,
         "whisper_model": align_settings.get("whisper_model", ""),
         "created_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "words": words,
@@ -354,8 +422,11 @@ def main() -> int:
 
     debug = {
         "method": method,
+        "mode": mode,
         "match_ratio": round(match_ratio, 4),
         "script_char_count": len(full_text),
+        "script_token_count": len(script_tokens),
+        "beat_count": beat_count,
         "narration_duration": round(duration, 3),
         "expected_duration_range": list(expected) if expected else None,
         "heard_word_count": len(heard),
@@ -436,6 +507,33 @@ def _join_narration(block_texts: list[str], *, gap_paragraph: bool = True) -> st
     return separator.join(t.strip() for t in block_texts if t and t.strip())
 
 
+def _beat_block_boundaries(
+    timings: list,
+    block_token_counts: list[int],
+    duration: float,
+) -> list[tuple[float, float]]:
+    """Turn beat-token timings into block windows without re-deriving beats here."""
+    boundaries: list[tuple[float, float]] = []
+    cursor = 0
+    previous_end = 0.0
+
+    for count in block_token_counts:
+        window = timings[cursor : cursor + count]
+        cursor += count
+
+        if not window:
+            boundaries.append((previous_end, previous_end))
+            continue
+
+        start = max(previous_end, float(window[0].start))
+        end = max(start, min(float(window[-1].end), duration))
+        start = min(start, end)
+        previous_end = end
+        boundaries.append((start, end))
+
+    return boundaries
+
+
 def _plausible_duration(text: str, tts_settings: dict) -> tuple[float, float] | None:
     """Expected narration length, used only to catch a truncated synthesis."""
     wpm = float(tts_settings.get("duration_words_per_minute", 150))
@@ -464,6 +562,125 @@ def _resolve_reference(root: Path, reference: str | None) -> Path | None:
     return None
 
 
+
+def _run_batch_align(root: Path, job: dict) -> int:
+    started = time.time()
+    align_settings = job.get("align", {})
+    max_words_per_beat = int(job.get("render", {}).get("max_words_per_beat", 14))
+
+    import soundfile as sf
+    from aligner import align_tokens
+    from faster_whisper import WhisperModel
+    from recap_sync import alignment_tokens, beats_for_blocks
+
+    model_name = align_settings.get("whisper_model", "large-v3-turbo")
+    device = align_settings.get("device", "cuda")
+    compute_type = align_settings.get("compute_type", "float16")
+
+    print(f"[kernel] loading WhisperModel {model_name} on {device} ({compute_type})...", flush=True)
+    whisper = WhisperModel(model_name, device=device, compute_type=compute_type)
+
+    chapters_dir = root / "chapters"
+    chapter_list = job.get("chapters", [])
+    if not chapter_list:
+        chapter_list = sorted([p.name for p in chapters_dir.iterdir() if p.is_dir()])
+
+    print(f"[kernel] batch aligning {len(chapter_list)} chapters: {chapter_list}", flush=True)
+
+    for ch_name in chapter_list:
+        ch_dir = chapters_dir / ch_name
+        script_file = ch_dir / "script.json"
+        audio_file = ch_dir / "narration.wav"
+        if not (script_file.exists() and audio_file.exists()):
+            print(f"[kernel] skipping {ch_name}: missing script or audio", flush=True)
+            continue
+
+        script = json.loads(script_file.read_text(encoding="utf-8"))
+        blocks = script.get("blocks", [])
+        audio, sample_rate = sf.read(str(audio_file), dtype="float32")
+        if audio.ndim > 1:
+            audio = audio[:, 0]
+        duration = len(audio) / float(sample_rate)
+
+        # Resample to 16kHz float32 mono for Whisper (bypasses av.open completely)
+        import numpy as np
+        import torch
+        import torchaudio.functional as F
+        audio_t = torch.from_numpy(audio).float()
+        if sample_rate != 16000:
+            audio_16k = F.resample(audio_t, orig_freq=sample_rate, new_freq=16000).numpy()
+        else:
+            audio_16k = audio_t.numpy()
+        audio_16k = np.ascontiguousarray(audio_16k, dtype=np.float32)
+
+        beats = beats_for_blocks(blocks, max_words=max_words_per_beat)
+        script_tokens = []
+        block_token_counts = []
+        for block in blocks:
+            b_id = str(block.get("block_id", ""))
+            count = 0
+            for beat in beats:
+                if beat.block_id != b_id:
+                    continue
+                tokens = alignment_tokens(beat.text)
+                script_tokens.extend(tokens)
+                count += len(tokens)
+            block_token_counts.append(count)
+
+        print(f"[kernel] [{ch_name}] transcribing {duration:.1f}s on GPU...", flush=True)
+        segments, info = whisper.transcribe(
+            audio_16k,
+            word_timestamps=True,
+            beam_size=int(align_settings.get("beam_size", 5)),
+            vad_filter=True,
+        )
+        heard = []
+        for segment in segments:
+            for word in segment.words or []:
+                w_text = (word.word or "").strip()
+                if w_text:
+                    heard.append((w_text, float(word.start), float(word.end)))
+
+        timings, match_ratio = align_tokens(script_tokens, heard)
+        words = [
+            {"word": t.token, "start": round(t.start, 3), "end": round(t.end, 3)}
+            for t in timings
+        ]
+        boundaries = _beat_block_boundaries(timings, block_token_counts, duration)
+
+        block_timings = []
+        prev_end = 0.0
+        for block, (start, end) in zip(blocks, boundaries, strict=False):
+            start = max(prev_end, min(start, duration))
+            end = max(start, min(end, duration))
+            prev_end = end
+            block_timings.append({
+                "block_id": block.get("block_id"),
+                "start": round(start, 3),
+                "end": round(end, 3),
+                "method": "aligned",
+                "match_ratio": round(match_ratio, 4),
+            })
+
+        timeline = {
+            "chapter_id": ch_name,
+            "audio_file": "05_narration.wav",
+            "sample_rate": sample_rate,
+            "duration": round(duration, 3),
+            "tts_backend": f"fish-audio-continuous ({model_name})",
+            "whisper_model": model_name,
+            "created_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "words": words,
+            "blocks": block_timings,
+        }
+        out_timeline = WORKING / f"{ch_name}_timeline.json"
+        out_timeline.write_text(json.dumps(timeline, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"[kernel] [{ch_name}] SUCCESS: ratio={match_ratio:.2f}, words={len(words)}, duration={duration:.1f}s", flush=True)
+
+    print(f"[kernel] batch alignment complete in {time.time() - started:.1f}s!", flush=True)
+    return 0
+
+
 if __name__ == "__main__":
     # Kaggle's own log download returned a zero-byte file for this kernel, which
     # makes every failure blind: the run dies, the stage reports "status error",
@@ -481,3 +698,5 @@ if __name__ == "__main__":
         except Exception:  # noqa: BLE001
             pass
         raise
+
+

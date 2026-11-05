@@ -46,6 +46,11 @@ def run(
         return load_model(paths.timeline_file, TimelineFile)
 
     backend = str(config.get("tts.backend", "fish-tts") or "fish-tts").lower()
+    if backend in ("fish-whisper", "fish_whisper", "fish-continuous"):
+        from .fish_continuous_engine import run_fish_continuous_tts
+
+        return run_fish_continuous_tts(paths, config, force=force)
+
     if backend in ("fish-tts", "fish", "fish_audio", "fish-audio"):
         from .fish_tts_engine import run_fish_tts
 
@@ -209,7 +214,7 @@ def _prepare_payload(paths: ChapterPaths, config: Config) -> str:
     )
 
 
-def _build_job(paths: ChapterPaths, config: Config, staging: Path) -> dict:
+def _build_job(paths: ChapterPaths, config: Config, staging: Path, *, mode: str = "tts_align") -> dict:
     """Resolve every setting the kernel needs into one file.
 
     The kernel has no access to config.yaml, and shipping config parsing to
@@ -223,6 +228,7 @@ def _build_job(paths: ChapterPaths, config: Config, staging: Path) -> dict:
 
     return {
         "chapter_id": paths.chapter_id,
+        "mode": mode,
         "panel_count": len(paths.panel_images()),
         "tts": {
             "voice": voice,
@@ -238,6 +244,10 @@ def _build_job(paths: ChapterPaths, config: Config, staging: Path) -> dict:
             "compute_type": config.get("align.compute_type", "float16"),
             "beam_size": config.get("align.beam_size", 5),
             "min_match_ratio": config.get("align.min_match_ratio", 0.55),
+            "strict": bool(config.get("align.strict", False)),
+        },
+        "render": {
+            "max_words_per_beat": config.get("render.max_words_per_beat", 14),
         },
         "narration": {
             "block_gap_seconds": config.get("narration.block_gap_seconds", 0.18),
@@ -247,7 +257,12 @@ def _build_job(paths: ChapterPaths, config: Config, staging: Path) -> dict:
 
 
 def _push_kernel(
-    client: KaggleClient, kernel_slug: str, payload_url: str, paths: ChapterPaths
+    client: KaggleClient,
+    kernel_slug: str,
+    payload_url: str,
+    paths: ChapterPaths,
+    *,
+    input_dataset: str | None = None,
 ) -> None:
     """Push a copy of the kernel, pointed at this run's payload URL.
 
@@ -255,10 +270,13 @@ def _push_kernel(
     writing them into the checked-in `kernel-metadata.json` would leave a Kaggle
     username in a file that is meant to be safe to commit.
     """
+    dataset_sources = [f"{client.username}/manga-recap-voice-orus"]
+    if input_dataset:
+        dataset_sources.append(input_dataset)
     metadata = {
         "id": f"{client.username}/{kernel_slug}",
         "title": kernel_slug,
-        "dataset_sources": [f"{client.username}/manga-recap-voice-orus"],
+        "dataset_sources": dataset_sources,
     }
     work_dir = payload.stage_from_url(
         kernel_dir=KERNEL_DIR,

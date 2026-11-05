@@ -293,3 +293,145 @@ def test_tts_engine_workers_per_gpu_config():
     engine = TTSEngine(voice_mode="builtin", workers_per_gpu=3)
     assert engine.workers_per_gpu == 3
 
+
+def _load_kernel_main(name: str):
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(name, KERNEL_A / "main.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_beat_block_boundaries_are_monotonic_and_clamped():
+    from dataclasses import dataclass
+
+    module = _load_kernel_main("kernel_boundaries")
+
+    @dataclass
+    class Timing:
+        start: float
+        end: float
+
+    boundaries = module._beat_block_boundaries(
+        [Timing(0.2, 0.5), Timing(0.6, 0.9), Timing(1.0, 1.3)],
+        [2, 1],
+        1.25,
+    )
+    assert boundaries == [(0.2, 0.9), (1.0, 1.25)]
+
+
+def test_align_mode_writes_one_timing_per_script_beat_token(tmp_path, monkeypatch):
+    import shutil
+    import sys
+
+    import soundfile as sf
+
+    module = _load_kernel_main("kernel_align_main")
+    monkeypatch.setattr(module, "WORKING", tmp_path)
+
+    payload = tmp_path / "payload"
+    lib = payload / "lib"
+    lib.mkdir(parents=True)
+    repo = Path(__file__).resolve().parents[1]
+    shutil.copy2(repo / "src/manga_recap/render/sync.py", lib / "recap_sync.py")
+
+    script = {
+        "blocks": [
+            {
+                "block_id": "b001",
+                "panel_ids": ["panel_0001", "panel_0002"],
+                "narration": "Kayden falls. Jiwoo catches him.",
+                "beats": [
+                    {
+                        "beat_id": "b001_b00",
+                        "panel_id": "panel_0001",
+                        "text": "Kayden falls.",
+                    },
+                    {
+                        "beat_id": "b001_b01",
+                        "panel_id": "panel_0002",
+                        "text": "Jiwoo catches him.",
+                    },
+                ],
+            }
+        ]
+    }
+    job = {
+        "chapter_id": "ch01",
+        "mode": "align",
+        "align": {"strict": True, "min_match_ratio": 0.85, "whisper_model": "large-v3-turbo"},
+        "render": {"max_words_per_beat": 14},
+    }
+    (payload / "script.json").write_text(json.dumps(script), encoding="utf-8")
+    (payload / "job.json").write_text(json.dumps(job), encoding="utf-8")
+    sf.write(payload / "narration.wav", [0.0] * 8820, 4410, subtype="PCM_16")
+
+    monkeypatch.setattr(module, "find_input", lambda: payload)
+    sys.path.insert(0, str(lib))
+    from recap_sync import alignment_tokens
+
+    expected = [
+        token
+        for beat in script["blocks"][0]["beats"]
+        for token in alignment_tokens(beat["text"])
+    ]
+    heard = [(token, index * 0.2, index * 0.2 + 0.15) for index, token in enumerate(expected)]
+    monkeypatch.setattr(module, "transcribe", lambda path, settings: heard)
+
+    assert module.main() == 0
+
+    timeline = json.loads((tmp_path / "timeline.json").read_text(encoding="utf-8"))
+    assert [word["word"] for word in timeline["words"]] == expected
+    assert timeline["blocks"][0]["method"] == "aligned"
+    assert timeline["blocks"][0]["match_ratio"] >= 0.85
+
+
+def test_strict_align_mode_fails_instead_of_estimating(tmp_path, monkeypatch):
+    import shutil
+    import sys
+
+    import soundfile as sf
+
+    module = _load_kernel_main("kernel_align_strict")
+    monkeypatch.setattr(module, "WORKING", tmp_path)
+
+    payload = tmp_path / "payload"
+    lib = payload / "lib"
+    lib.mkdir(parents=True)
+    repo = Path(__file__).resolve().parents[1]
+    shutil.copy2(repo / "src/manga_recap/render/sync.py", lib / "recap_sync.py")
+
+    script = {
+        "blocks": [
+            {
+                "block_id": "b001",
+                "panel_ids": ["panel_0001"],
+                "narration": "Kayden falls.",
+                "beats": [
+                    {
+                        "beat_id": "b001_b00",
+                        "panel_id": "panel_0001",
+                        "text": "Kayden falls.",
+                    }
+                ],
+            }
+        ]
+    }
+    job = {
+        "chapter_id": "ch01",
+        "mode": "align",
+        "align": {"strict": True, "min_match_ratio": 0.85},
+        "render": {"max_words_per_beat": 14},
+    }
+    (payload / "script.json").write_text(json.dumps(script), encoding="utf-8")
+    (payload / "job.json").write_text(json.dumps(job), encoding="utf-8")
+    sf.write(payload / "narration.wav", [0.0] * 4410, 4410, subtype="PCM_16")
+
+    monkeypatch.setattr(module, "find_input", lambda: payload)
+    monkeypatch.setattr(module, "transcribe", lambda path, settings: [])
+    sys.path.insert(0, str(lib))
+
+    with pytest.raises(RuntimeError, match="Whisper word timings"):
+        module.main()
+
